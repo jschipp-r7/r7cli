@@ -28,6 +28,7 @@ class Config:
     use_cache: bool
     limit: Optional[int]
     timeout: int  # seconds, default 30
+    search: Optional[str]  # field name to search for in JSON responses
 
 
 def resolve_config(
@@ -41,6 +42,7 @@ def resolve_config(
     use_cache: bool = False,
     limit: Optional[int] = None,
     timeout: int = 30,
+    search: Optional[str] = None,
 ) -> Config:
     """Build a :class:`Config` by merging flags, env vars, and defaults.
 
@@ -76,4 +78,6 @@ def resolve_config(
         output_format=output_format,
         use_cache=use_cache,
         limit=limit,
+        timeout=timeout,
+        search=search,
     )

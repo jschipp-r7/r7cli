@@ -9,7 +9,9 @@ GLOBAL_VALUE_FLAGS = {
     "-k", "--api-key",
     "-o", "--output",
     "-l", "--limit",
+    "-t", "--timeout",
     "--drp-token",
+    "--search-fields",
 }
 
 GLOBAL_BOOLEAN_FLAGS = {
@@ -24,6 +26,13 @@ GLOBAL_FLAGS = GLOBAL_VALUE_FLAGS | GLOBAL_BOOLEAN_FLAGS
 class GlobalFlagHintGroup(click.Group):
     """Click Group that gives a helpful error when global flags are used
     after a subcommand instead of before it."""
+
+    def __init__(self, *args, **kwargs):
+        # Ensure -h works as --help on all subcommand groups
+        context_settings = kwargs.get("context_settings", {})
+        context_settings.setdefault("help_option_names", ["-h", "--help"])
+        kwargs["context_settings"] = context_settings
+        super().__init__(*args, **kwargs)
 
     def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
         for arg in args:

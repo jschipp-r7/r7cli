@@ -43,7 +43,7 @@ class R7Client:
 
     def __init__(self, config: Config) -> None:
         self.config = config
-        self._http = httpx.Client(timeout=30.0)
+        self._http = httpx.Client(timeout=float(config.timeout))
         self._cache = CacheStore()
         self._redact_re = _build_redact_pattern(config)
 
@@ -81,7 +81,14 @@ class R7Client:
         if self.config.use_cache:
             cached = self._cache.read(ck)
             if cached is not None:
+                cache_path = self._cache.CACHE_DIR / f"{ck}.json"
+                if self.config.debug:
+                    self._log(f"Cache hit: {cache_path}")
                 return cached
+            else:
+                if self.config.debug:
+                    cache_path = self._cache.CACHE_DIR / f"{ck}.json"
+                    self._log(f"No cache file found: {cache_path}")
 
         # -- build merged headers -------------------------------------------
         merged_headers = {
@@ -99,6 +106,11 @@ class R7Client:
         if self.config.debug and json is not None:
             import json as _json
             self._log(f">>> {_json.dumps(json)}")
+
+        # -- debug: print equivalent curl command ---------------------------
+        if self.config.debug:
+            curl_cmd = self._build_curl(method, url, merged_headers, json, params, auth)
+            self._log(f"Example cURL: {curl_cmd}")
 
         # -- execute --------------------------------------------------------
         response = self._send(method, url, json=json, params=params,
@@ -131,8 +143,42 @@ class R7Client:
         try:
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
+            if response.status_code == 401:
+                # Check if a key was even provided
+                has_key = bool(self.config.api_key) or (auth is not None)
+                if not has_key:
+                    msg = (
+                        "No API key provided. Set the R7_X_API_KEY environment variable "
+                        "or use -k / --api-key to provide one."
+                    )
+                else:
+                    msg = (
+                        "The provided key is not authorized for this request. "
+                        "Try checking permissions or generating a new platform key."
+                    )
+                if self.config.verbose:
+                    msg += f"\n{exc}"
+                raise APIError(
+                    message=msg,
+                    status_code=response.status_code,
+                    body=response.text,
+                ) from exc
+            # Try to extract a human-readable message from the JSON body
+            api_msg = str(exc)
+            try:
+                err_body = response.json()
+                if isinstance(err_body, dict):
+                    err_obj = err_body.get("error", err_body)
+                    if isinstance(err_obj, dict) and "message" in err_obj:
+                        api_msg = err_obj["message"]
+                    elif "message" in err_body:
+                        api_msg = err_body["message"]
+            except Exception:
+                pass
+            if self.config.verbose:
+                api_msg += f"\n{exc}"
             raise APIError(
-                message=str(exc),
+                message=api_msg,
                 status_code=response.status_code,
                 body=response.text,
             ) from exc
@@ -170,9 +216,64 @@ class R7Client:
                 auth=auth,
                 headers=headers,
             )
+        except httpx.TimeoutException as exc:
+            timeout_val = self.config.timeout
+            raise NetworkError(
+                f"Request timed out after {timeout_val}s. "
+                f"The request is taking longer than expected, likely because "
+                f"a large amount of data is being returned. "
+                f"Try using -t / --timeout with a value greater than {timeout_val} (in seconds)."
+            ) from exc
         except httpx.RequestError as exc:
             raise NetworkError(str(exc)) from exc
 
     def _log(self, msg: str) -> None:
         """Print *msg* to stderr with credential redaction."""
         print(_redact(msg, self._redact_re), file=sys.stderr)
+
+    def _build_curl(
+        self,
+        method: str,
+        url: str,
+        headers: dict,
+        json_body: dict | None,
+        params: dict | None,
+        auth: tuple | None,
+    ) -> str:
+        """Build an equivalent curl command string."""
+        import json as _json
+        import shlex
+        from urllib.parse import urlencode
+
+        parts = ["curl", "-s"]
+
+        if method != "GET":
+            parts.extend(["-X", method])
+
+        # URL with query params
+        full_url = url
+        if params:
+            full_url = f"{url}?{urlencode(params)}"
+        parts.append(shlex.quote(full_url))
+
+        # Headers — save X-Api-Key for last
+        api_key_header = None
+        for key, val in headers.items():
+            if key == "X-Api-Key":
+                api_key_header = (key, val)
+                continue
+            parts.extend(["-H", shlex.quote(f"{key}: {val}")])
+
+        # Auth
+        if auth:
+            parts.extend(["-u", shlex.quote(f"{auth[0]}:{auth[1]}")])
+
+        # Body
+        if json_body is not None:
+            parts.extend(["-d", shlex.quote(_json.dumps(json_body))])
+
+        # API key last
+        if api_key_header:
+            parts.extend(["-H", shlex.quote(f"{api_key_header[0]}: {api_key_header[1]}")])
+
+        return " ".join(parts)

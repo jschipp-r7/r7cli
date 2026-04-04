@@ -36,7 +36,7 @@ def apply_limit(data: Any, n: int) -> Any:
     return result
 
 
-def format_output(data: Any, fmt: str, limit: int | None = None) -> str:
+def format_output(data: Any, fmt: str, limit: int | None = None, search: str | None = None) -> str:
     """Serialize *data* to the requested format string.
 
     Parameters
@@ -48,9 +48,16 @@ def format_output(data: Any, fmt: str, limit: int | None = None) -> str:
     limit:
         If set, truncate the largest top-level array to this many items
         before formatting.
+    search:
+        If set, search the data for this field name and return matching values
+        instead of the full output.
     """
     if limit is not None:
         data = apply_limit(data, limit)
+
+    if search is not None:
+        values = search_field(data, search)
+        return format_search_results(values, search)
 
     if fmt == "json":
         return json.dumps(data, indent=2)
@@ -109,3 +116,39 @@ def _extract_rows(data: Any) -> list:
         # Single dict → one-row table
         return [data]
     return [data]
+
+
+# ---------------------------------------------------------------------------
+# Field search
+# ---------------------------------------------------------------------------
+
+def search_field(data: Any, field_name: str) -> list[Any]:
+    """Recursively traverse *data* and return all values for keys matching *field_name*."""
+    results: list[Any] = []
+    _walk(data, field_name, results)
+    return results
+
+
+def _walk(obj: Any, field_name: str, results: list[Any]) -> None:
+    """Depth-first walk collecting values where key == field_name."""
+    if isinstance(obj, dict):
+        for key, val in obj.items():
+            if key == field_name:
+                results.append(val)
+            _walk(val, field_name, results)
+    elif isinstance(obj, list):
+        for item in obj:
+            _walk(item, field_name, results)
+
+
+def format_search_results(values: list[Any], field_name: str) -> str:
+    """Format search results as a JSON object with field:value pairs and a count."""
+    if not values:
+        return json.dumps({"count": 0, "message": f"No matches found for field '{field_name}'."}, indent=2)
+    result: dict[str, Any] = {}
+    matches: list[dict[str, Any]] = []
+    for val in values:
+        matches.append({field_name: val})
+    result["matches"] = matches
+    result["count"] = len(values)
+    return json.dumps(result, indent=2, default=str)

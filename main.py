@@ -57,18 +57,23 @@ class SolutionGroup(click.MultiCommand):
         return None
 
 
-@click.command(cls=SolutionGroup)
+CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"]}
+
+
+@click.command(cls=SolutionGroup, context_settings=CONTEXT_SETTINGS)
 @click.option("-r", "--region", default=None, help="Region code (default: us).")
 @click.option("-v", "--verbose", is_flag=True, help="Log request/response info to stderr.")
 @click.option("-k", "--api-key", default=None, help="Insight Platform API key.")
 @click.option("-o", "--output", "output_format", default="json", help="Output format: json, table, csv.")
-@click.option("-c", "--cache", "use_cache", is_flag=True, help="Enable local response cache.")
-@click.option("-l", "--limit", type=int, default=None, help="Truncate largest array in output.")
+@click.option("-c", "--cache", "use_cache", is_flag=True, help="Return last response from local cache (resp are saved), for faster testing.")
+@click.option("-l", "--limit", type=int, default=None, help="Limit the output of the largest array.")
 @click.option("--debug", is_flag=True, help="Log full request/response bodies to stderr.")
-@click.option("--drp-token", default=None, help="DRP API token.")
+@click.option("--drp-token", default=None, help="Provide DRP API token in user:key format.")
+@click.option("-t", "--timeout", type=int, default=30, help="Request timeout in seconds (default: 30).")
+@click.option("--search-fields", "search", default=None, help="Search JSON response for a field name and print matching values.")
 @click.pass_context
-def cli(ctx, region, verbose, api_key, output_format, use_cache, limit, debug, drp_token):
-    """r7-cli: Rapid7 Insight Platform CLI
+def cli(ctx, region, verbose, api_key, output_format, use_cache, limit, debug, drp_token, timeout, search):
+    """r7-cli: The Rapid7 Command Platform at Your Fingertips
 
     Usage: r7-cli SOLUTION [OPTIONS] SUBCOMMAND [ARGS]
 
@@ -92,6 +97,8 @@ def cli(ctx, region, verbose, api_key, output_format, use_cache, limit, debug, d
             output_format=output_format,
             use_cache=use_cache,
             limit=limit,
+            timeout=timeout,
+            search=search,
         )
         ctx.obj["config"] = config
     except R7Error as exc:
@@ -116,7 +123,7 @@ def _validate_cmd(ctx):
     url = INSIGHT_BASE.format(region=config.region) + "/validate"
     try:
         result = client.get(url, solution="platform", subcommand="validate")
-        click.echo(format_output(result, config.output_format, config.limit))
+        click.echo(format_output(result, config.output_format, config.limit, config.search))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)

@@ -27,12 +27,61 @@ def _get_config(ctx: click.Context) -> Config:
     return ctx.obj["config"]
 
 
+def _parse_cmp_expr(expr):
+    """Parse an expression like '>=2' into (operator_func, value_string).
+
+    Supports: >=, <=, >, <, =
+    If no operator prefix, defaults to '=' (exact match).
+    """
+    import operator as _op
+    expr = expr.strip()
+    for sym, func in [(">=", _op.ge), ("<=", _op.le), (">", _op.gt), ("<", _op.lt), ("=", _op.eq)]:
+        if expr.startswith(sym):
+            return func, expr[len(sym):].strip()
+    return _op.eq, expr
+
+
+def _extract_poll_items(data) -> list[dict]:
+    """Find the largest list of dicts in the response."""
+    if isinstance(data, list):
+        if data and isinstance(data[0], dict):
+            return data
+        return []
+    if isinstance(data, dict):
+        best: list[dict] = []
+        for val in data.values():
+            if isinstance(val, list) and val and isinstance(val[0], dict):
+                if len(val) > len(best):
+                    best = val
+            elif isinstance(val, dict):
+                nested = _extract_poll_items(val)
+                if len(nested) > len(best):
+                    best = nested
+        return best
+    return []
+
+
+def _extract_item_id(item: dict) -> str:
+    """Extract the best available ID from a dict."""
+    for key in ("id", "_id", "workflowId", "job_id", "rrn"):
+        val = item.get(key, "")
+        if val:
+            return str(val)
+    return ""
+
+
 def _require_token(config: Config) -> None:
-    """Raise UserInputError if the DRP token is not configured."""
+    """Exit with a friendly message if the DRP token is not configured."""
     if not config.drp_token:
-        raise UserInputError(
-            "DRP token is required. Set R7_DRP_TOKEN or pass --drp-token."
+        click.echo(
+            "DRP token is required.\n\n"
+            "Set the R7_DRP_TOKEN environment variable or pass --drp-token in account_id:api_key format.\n\n"
+            "Example:\n"
+            "  export R7_DRP_TOKEN='<ACCOUNT_ID>:<API_KEY>'\n"
+            "  r7-cli drp api-version",
+            err=True,
         )
+        sys.exit(1)
 
 
 def _drp_auth(config: Config) -> tuple[str, str]:
@@ -120,7 +169,7 @@ def api_version(ctx):
     client = _drp_client(config)
     url = f"{DRP_BASE}/public/v1/api/version"
     result = client.get(url, auth=_drp_auth(config), solution="drp", subcommand="api-version")
-    click.echo(format_output(result, config.output_format, config.limit))
+    click.echo(format_output(result, config.output_format, config.limit, config.search))
 
 
 # ---------------------------------------------------------------------------
@@ -136,7 +185,7 @@ def modules(ctx):
     client = _drp_client(config)
     url = f"{DRP_BASE}/public/v1/account/system-modules"
     result = client.get(url, auth=_drp_auth(config), solution="drp", subcommand="modules")
-    click.echo(format_output(result, config.output_format, config.limit))
+    click.echo(format_output(result, config.output_format, config.limit, config.search))
 
 
 # ---------------------------------------------------------------------------
@@ -151,15 +200,44 @@ def assets(ctx):
 
 
 @assets.command("list")
+@click.option("-a", "--auto", "auto_poll", is_flag=True, help="Poll for new entries and only print new ones.")
+@click.option("-i", "--interval", type=int, default=10, help="Polling interval in seconds (default: 10).")
 @click.pass_context
-def assets_list(ctx):
+def assets_list(ctx, auto_poll, interval):
     """List monitored assets."""
     config = _get_config(ctx)
     _require_token(config)
     client = _drp_client(config)
     url = f"{DRP_BASE}/public/v2/data/assets"
-    result = client.get(url, auth=_drp_auth(config), solution="drp", subcommand="assets-list")
-    click.echo(format_output(result, config.output_format, config.limit))
+
+    try:
+        result = client.get(url, auth=_drp_auth(config), solution="drp", subcommand="assets-list")
+
+        if not auto_poll:
+            click.echo(format_output(result, config.output_format, config.limit, config.search))
+        else:
+            import time as _time
+            seen_ids: set[str] = set()
+            items = _extract_poll_items(result)
+            for item in items:
+                item_id = _extract_item_id(item)
+                if item_id:
+                    seen_ids.add(item_id)
+            click.echo(f"Polling for new results every {interval}s (Ctrl+C to stop)...", err=True)
+            while True:
+                _time.sleep(interval)
+                new_result = client.get(url, auth=_drp_auth(config), solution="drp", subcommand="assets-list")
+                new_items = _extract_poll_items(new_result)
+                for item in new_items:
+                    item_id = _extract_item_id(item)
+                    if item_id and item_id not in seen_ids:
+                        seen_ids.add(item_id)
+                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+    except KeyboardInterrupt:
+        click.echo("\nStopped polling.", err=True)
+    except R7Error as exc:
+        click.echo(str(exc), err=True)
+        sys.exit(exc.exit_code)
 
 
 # ---------------------------------------------------------------------------
@@ -175,25 +253,95 @@ def ioc_sources(ctx):
 
 @ioc_sources.command("list")
 @click.option("--enabled-only", is_flag=True, help="Show only enabled sources.")
+@click.option("--name", "name_filter", default=None, help="Filter by source name (substring match).")
+@click.option("--confidence", default=None, help="Filter by confidence level (e.g. '>=2', '<3', '=1').")
+@click.option("-a", "--auto", "auto_poll", is_flag=True, help="Poll for new entries and only print new ones.")
+@click.option("-i", "--interval", type=int, default=10, help="Polling interval in seconds (default: 10).")
 @click.pass_context
-def ioc_sources_list(ctx, enabled_only):
-    """List threat intelligence sources."""
+def ioc_sources_list(ctx, enabled_only, name_filter, confidence, auto_poll, interval):
+    """List threat intelligence sources.
+
+    \b
+    Examples:
+      # List all sources
+      r7-cli drp ioc-sources list
+
+    \b
+      # Only enabled sources
+      r7-cli drp ioc-sources list --enabled-only
+
+    \b
+      # Filter by confidence level
+      r7-cli drp ioc-sources list --confidence '>=2'
+
+    \b
+      # Search by name
+      r7-cli drp ioc-sources list --name 'Rapid7'
+
+    \b
+      # Combine filters
+      r7-cli drp ioc-sources list --enabled-only --confidence '>=2' --name 'Abuse'
+    """
     config = _get_config(ctx)
     _require_token(config)
     client = _drp_client(config)
     url = f"{DRP_BASE}/public/v1/iocs/sources"
-    result = client.get(url, auth=_drp_auth(config), solution="drp", subcommand="ioc-sources-list")
 
-    if not enabled_only:
-        click.echo(format_output(result, config.output_format, config.limit))
-        return
+    try:
+        result = client.get(url, auth=_drp_auth(config), solution="drp", subcommand="ioc-sources-list")
 
-    # Apply client-side filter for --enabled-only
-    items = result if isinstance(result, list) else result.get("content", result.get("data", []))
-    if not isinstance(items, list):
-        items = [items]
-    items = [s for s in items if s.get("IsEnabled") is True]
-    click.echo(format_output(items, config.output_format, config.limit))
+        has_filters = any([enabled_only, name_filter, confidence is not None])
+
+        if not auto_poll:
+            if not has_filters:
+                click.echo(format_output(result, config.output_format, config.limit, config.search))
+                return
+            # Flatten all source lists from the response
+            all_sources = []
+            if isinstance(result, dict):
+                for key, val in result.items():
+                    if isinstance(val, list):
+                        all_sources.extend(val)
+            elif isinstance(result, list):
+                all_sources = result
+            # Apply filters
+            if enabled_only:
+                all_sources = [s for s in all_sources if s.get("IsEnabled") is True]
+            if name_filter:
+                nf_lower = name_filter.lower()
+                all_sources = [s for s in all_sources if nf_lower in s.get("Name", "").lower()]
+            if confidence is not None:
+                cmp_func, val = _parse_cmp_expr(confidence)
+                try:
+                    threshold = int(val)
+                except ValueError:
+                    click.echo(f"Invalid --confidence value: '{confidence}'. Use e.g. '>=2', '<3', '=1'", err=True)
+                    sys.exit(1)
+                all_sources = [s for s in all_sources if s.get("ConfidenceLevel") is not None and cmp_func(s["ConfidenceLevel"], threshold)]
+            click.echo(format_output(all_sources, config.output_format, config.limit, config.search))
+        else:
+            import time as _time
+            seen_ids: set[str] = set()
+            items = _extract_poll_items(result)
+            for item in items:
+                item_id = _extract_item_id(item)
+                if item_id:
+                    seen_ids.add(item_id)
+            click.echo(f"Polling for new results every {interval}s (Ctrl+C to stop)...", err=True)
+            while True:
+                _time.sleep(interval)
+                new_result = client.get(url, auth=_drp_auth(config), solution="drp", subcommand="ioc-sources-list")
+                new_items = _extract_poll_items(new_result)
+                for item in new_items:
+                    item_id = _extract_item_id(item)
+                    if item_id and item_id not in seen_ids:
+                        seen_ids.add(item_id)
+                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+    except KeyboardInterrupt:
+        click.echo("\nStopped polling.", err=True)
+    except R7Error as exc:
+        click.echo(str(exc), err=True)
+        sys.exit(exc.exit_code)
 
 
 # ---------------------------------------------------------------------------
@@ -212,9 +360,42 @@ def alerts(ctx):
 @click.option("--alert-type", default=None, help="Filter by alert type.")
 @click.option("--remediation-status", default=None, help="Filter by remediation status.")
 @click.option("-d", "--days", type=int, default=None, help="Filter by FoundDate within N days.")
+@click.option("-r", "--resolve", is_flag=True, help="Resolve full details for each alert (slow — one request per alert).")
+@click.option("-a", "--auto", "auto_poll", is_flag=True, help="Poll for new entries and only print new ones.")
+@click.option("-i", "--interval", type=int, default=10, help="Polling interval in seconds (default: 10).")
 @click.pass_context
-def alerts_list(ctx, severity, alert_type, remediation_status, days):
-    """List DRP alerts with full details."""
+def alerts_list(ctx, severity, alert_type, remediation_status, days, resolve, auto_poll, interval):
+    """List DRP alerts.
+
+    By default returns the alert ID list from the alerts-list endpoint.
+    Use --resolve / -r to fetch full details for each alert (slow — makes
+    one API request per alert ID).
+
+    \b
+    Examples:
+      # List alert IDs (fast)
+      r7-cli drp alerts list
+
+    \b
+      # List with full details (slow)
+      r7-cli drp alerts list --resolve
+
+    \b
+      # Filter by severity
+      r7-cli drp alerts list --severity High
+
+    \b
+      # Filter by type and resolve
+      r7-cli drp alerts list --alert-type Phishing --resolve
+
+    \b
+      # Alerts from the last 7 days
+      r7-cli drp alerts list --resolve --days 7
+
+    \b
+      # Poll for new alerts
+      r7-cli drp alerts list -a -i 30
+    """
     config = _get_config(ctx)
     _require_token(config)
     client = _drp_client(config)
@@ -229,22 +410,91 @@ def alerts_list(ctx, severity, alert_type, remediation_status, days):
         params["remediationStatus"] = remediation_status
 
     url = f"{DRP_BASE}/public/v2/data/alerts/alerts-list"
-    result = client.get(url, params=params or None, auth=_drp_auth(config),
-                        solution="drp", subcommand="alerts-list")
-
-    ids = _extract_ids(result)
-    if not ids:
-        click.echo(format_output(result, config.output_format, config.limit))
-        return
-
     detail_url = f"{DRP_BASE}/public/v1/data/alerts/get-complete-alert/{{id}}"
-    details = _fetch_details(client, config, ids, detail_url, config.limit)
 
-    # Filter by --days on FoundDate
-    if days is not None:
-        details = _filter_by_date(details, "FoundDate", days)
+    try:
+        result = client.get(url, params=params or None, auth=_drp_auth(config),
+                            solution="drp", subcommand="alerts-list")
 
-    click.echo(format_output(details, config.output_format, config.limit))
+        if not resolve and not auto_poll:
+            # Fast mode — just return the raw alert list
+            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            return
+
+        # Resolve mode or polling — need to fetch details
+        ids = _extract_ids(result)
+        if not ids:
+            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            return
+
+        if resolve:
+            details = _fetch_details(client, config, ids, detail_url, config.limit)
+            if days is not None:
+                details = _filter_by_date(details, "FoundDate", days)
+
+        if not auto_poll:
+            click.echo(format_output(details, config.output_format, config.limit, config.search))
+        else:
+            import time as _time
+            seen_ids: set[str] = set()
+            if resolve:
+                for item in details:
+                    item_id = _extract_item_id(item)
+                    if item_id:
+                        seen_ids.add(item_id)
+            else:
+                # Seed seen IDs from the raw list
+                for aid in ids:
+                    seen_ids.add(aid)
+            click.echo(f"Polling for new results every {interval}s (Ctrl+C to stop)...", err=True)
+            while True:
+                _time.sleep(interval)
+                new_result = client.get(url, params=params or None, auth=_drp_auth(config),
+                                        solution="drp", subcommand="alerts-list")
+                new_ids_list = _extract_ids(new_result)
+                if not new_ids_list:
+                    continue
+                new_alert_ids = [aid for aid in new_ids_list if aid not in seen_ids]
+                if not new_alert_ids:
+                    continue
+                for aid in new_alert_ids:
+                    seen_ids.add(aid)
+                if resolve:
+                    new_details = _fetch_details(client, config, new_alert_ids, detail_url, config.limit)
+                    if days is not None:
+                        new_details = _filter_by_date(new_details, "FoundDate", days)
+                    for item in new_details:
+                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+                else:
+                    for aid in new_alert_ids:
+                        click.echo(aid)
+    except KeyboardInterrupt:
+        click.echo("\nStopped polling.", err=True)
+    except R7Error as exc:
+        click.echo(str(exc), err=True)
+        sys.exit(exc.exit_code)
+
+
+@alerts.command("get")
+@click.option("-j", "--id", "alert_id", required=True, help="Alert ID.")
+@click.pass_context
+def alerts_get(ctx, alert_id):
+    """Get full details for a single alert.
+
+    \b
+    Example:
+      r7-cli drp alerts get --id <ALERT_ID>
+    """
+    config = _get_config(ctx)
+    _require_token(config)
+    client = _drp_client(config)
+    url = f"{DRP_BASE}/public/v1/data/alerts/get-complete-alert/{alert_id}"
+    try:
+        result = client.get(url, auth=_drp_auth(config), solution="drp", subcommand="alerts-get")
+        click.echo(format_output(result, config.output_format, config.limit, config.search))
+    except R7Error as exc:
+        click.echo(str(exc), err=True)
+        sys.exit(exc.exit_code)
 
 
 # ---------------------------------------------------------------------------
@@ -259,33 +509,129 @@ def phishing_threats(ctx):
 
 
 @phishing_threats.command("list")
-@click.option("--active", "active_only", is_flag=True, help="Show only Alert/Potential Threat status.")
-@click.option("-d", "--days", type=int, default=None, help="Filter by LastSourceDate within N days.")
+@click.option("--active", "active_only", is_flag=True, help="Show only Alert/Potential Threat status (requires --resolve).")
+@click.option("-d", "--days", type=int, default=None, help="Filter by LastSourceDate within N days (requires --resolve).")
+@click.option("-r", "--resolve", is_flag=True, help="Resolve full details for each threat (slow — one request per threat ID).")
+@click.option("-a", "--auto", "auto_poll", is_flag=True, help="Poll for new entries and only print new ones.")
+@click.option("-i", "--interval", type=int, default=10, help="Polling interval in seconds (default: 10).")
 @click.pass_context
-def phishing_threats_list(ctx, active_only, days):
-    """List phishing domain threats."""
+def phishing_threats_list(ctx, active_only, days, resolve, auto_poll, interval):
+    """List phishing domain threats.
+
+    By default returns the threat ID list from the threats-list endpoint.
+    Use --resolve / -r to fetch full details for each threat (slow — makes
+    one API request per threat ID).
+
+    \b
+    Examples:
+      # List threat IDs (fast)
+      r7-cli drp phishing-threats list
+
+    \b
+      # List with full details (slow)
+      r7-cli drp phishing-threats list --resolve
+
+    \b
+      # Only active threats with details
+      r7-cli drp phishing-threats list --resolve --active
+
+    \b
+      # Threats from the last 7 days
+      r7-cli drp phishing-threats list --resolve --days 7
+
+    \b
+      # Poll for new threats
+      r7-cli drp phishing-threats list -a -i 30
+    """
     config = _get_config(ctx)
     _require_token(config)
     client = _drp_client(config)
 
     url = f"{DRP_BASE}/public/v1/data/phishing-domains-threats/threats-list"
-    result = client.get(url, auth=_drp_auth(config), solution="drp", subcommand="phishing-threats-list")
-
-    ids = _extract_ids(result)
-    if not ids:
-        click.echo(format_output(result, config.output_format, config.limit))
-        return
-
     detail_url = f"{DRP_BASE}/public/v1/data/phishing-domains-threats/get-complete-threat/{{id}}"
-    details = _fetch_details(client, config, ids, detail_url, config.limit)
 
-    if active_only:
-        details = [d for d in details if d.get("Status") in ("Alert", "Potential Threat")]
+    try:
+        result = client.get(url, auth=_drp_auth(config), solution="drp", subcommand="phishing-threats-list")
 
-    if days is not None:
-        details = _filter_by_date(details, "LastSourceDate", days)
+        if not resolve and not auto_poll:
+            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            return
 
-    click.echo(format_output(details, config.output_format, config.limit))
+        ids = _extract_ids(result)
+        if not ids:
+            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            return
+
+        if resolve:
+            details = _fetch_details(client, config, ids, detail_url, config.limit)
+            if active_only:
+                details = [d for d in details if d.get("Status") in ("Alert", "Potential Threat")]
+            if days is not None:
+                details = _filter_by_date(details, "LastSourceDate", days)
+
+        if not auto_poll:
+            click.echo(format_output(details, config.output_format, config.limit, config.search))
+        else:
+            import time as _time
+            seen_ids: set[str] = set()
+            if resolve:
+                for item in details:
+                    item_id = _extract_item_id(item)
+                    if item_id:
+                        seen_ids.add(item_id)
+            else:
+                for aid in ids:
+                    seen_ids.add(aid)
+            click.echo(f"Polling for new results every {interval}s (Ctrl+C to stop)...", err=True)
+            while True:
+                _time.sleep(interval)
+                new_result = client.get(url, auth=_drp_auth(config), solution="drp", subcommand="phishing-threats-list")
+                new_ids_list = _extract_ids(new_result)
+                if not new_ids_list:
+                    continue
+                new_threat_ids = [aid for aid in new_ids_list if aid not in seen_ids]
+                if not new_threat_ids:
+                    continue
+                for aid in new_threat_ids:
+                    seen_ids.add(aid)
+                if resolve:
+                    new_details = _fetch_details(client, config, new_threat_ids, detail_url, config.limit)
+                    if active_only:
+                        new_details = [d for d in new_details if d.get("Status") in ("Alert", "Potential Threat")]
+                    if days is not None:
+                        new_details = _filter_by_date(new_details, "LastSourceDate", days)
+                    for item in new_details:
+                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+                else:
+                    for aid in new_threat_ids:
+                        click.echo(aid)
+    except KeyboardInterrupt:
+        click.echo("\nStopped polling.", err=True)
+    except R7Error as exc:
+        click.echo(str(exc), err=True)
+        sys.exit(exc.exit_code)
+
+
+@phishing_threats.command("get")
+@click.option("-j", "--id", "threat_id", required=True, help="Phishing threat ID.")
+@click.pass_context
+def phishing_threats_get(ctx, threat_id):
+    """Get full details for a single phishing threat.
+
+    \b
+    Example:
+      r7-cli drp phishing-threats get --id <THREAT_ID>
+    """
+    config = _get_config(ctx)
+    _require_token(config)
+    client = _drp_client(config)
+    url = f"{DRP_BASE}/public/v1/data/phishing-domains-threats/get-complete-threat/{threat_id}"
+    try:
+        result = client.get(url, auth=_drp_auth(config), solution="drp", subcommand="phishing-threats-get")
+        click.echo(format_output(result, config.output_format, config.limit, config.search))
+    except R7Error as exc:
+        click.echo(str(exc), err=True)
+        sys.exit(exc.exit_code)
 
 
 # ---------------------------------------------------------------------------
@@ -301,33 +647,105 @@ def takedowns(ctx):
 
 @takedowns.command("list")
 @click.option("-d", "--days", type=int, default=None, help="Filter by FoundDate within N days.")
+@click.option("-a", "--auto", "auto_poll", is_flag=True, help="Poll for new entries and only print new ones.")
+@click.option("-i", "--interval", type=int, default=10, help="Polling interval in seconds (default: 10).")
+@click.option("--type", "threat_type", default=None, help="Filter by threat type (e.g. Phishing, vip).")
+@click.option("--severity", default=None, help="Filter by severity (e.g. Medium, High).")
+@click.option("--status", default=None, help="Filter by TakedownStatus (e.g. Resolved, InProgress).")
+@click.option("--title", default=None, help="Filter by title (substring match).")
 @click.pass_context
-def takedowns_list(ctx, days):
-    """List resolved domain takedowns."""
+def takedowns_list(ctx, days, auto_poll, interval, threat_type, severity, status, title):
+    """List resolved domain takedowns.
+
+    \b
+    Examples:
+      # List all takedowns
+      r7-cli drp takedowns list
+
+    \b
+      # Takedowns from the last 30 days
+      r7-cli drp takedowns list --days 30
+
+    \b
+      # Only phishing takedowns
+      r7-cli drp takedowns list --type Phishing
+
+    \b
+      # Filter by severity
+      r7-cli drp takedowns list --severity Medium
+
+    \b
+      # Search by title
+      r7-cli drp takedowns list --title 'Suspicious'
+
+    \b
+      # Combine filters
+      r7-cli drp takedowns list --type Phishing --severity Medium --days 90
+    """
     config = _get_config(ctx)
     _require_token(config)
     client = _drp_client(config)
 
     url = f"{DRP_BASE}/public/v2/data/alerts/alerts-list"
     params = {"remediationStatus": "CompletedSuccessfully"}
-    result = client.get(url, params=params, auth=_drp_auth(config),
-                        solution="drp", subcommand="takedowns-list")
-
-    ids = _extract_ids(result)
-    if not ids:
-        click.echo(format_output(result, config.output_format, config.limit))
-        return
-
     detail_url = f"{DRP_BASE}/public/v1/data/alerts/get-complete-alert/{{id}}"
-    details = _fetch_details(client, config, ids, detail_url, config.limit)
 
-    # Filter to TakedownStatus == Resolved
-    details = [d for d in details if d.get("TakedownStatus") == "Resolved"]
+    def _fetch_and_filter():
+        result = client.get(url, params=params, auth=_drp_auth(config),
+                            solution="drp", subcommand="takedowns-list")
+        ids = _extract_ids(result)
+        if not ids:
+            return result, []
+        details = _fetch_details(client, config, ids, detail_url, config.limit)
+        details = [d for d in details if d.get("TakedownStatus") == "Resolved"]
+        if days is not None:
+            details = _filter_by_date(details, "FoundDate", days)
+        # Apply additional client-side filters
+        if threat_type:
+            tt_lower = threat_type.lower()
+            details = [d for d in details if isinstance(d.get("Details"), dict) and d["Details"].get("Type", "").lower() == tt_lower]
+        if severity:
+            sev_lower = severity.lower()
+            details = [d for d in details if isinstance(d.get("Details"), dict) and d["Details"].get("Severity", "").lower() == sev_lower]
+        if status:
+            st_lower = status.lower()
+            details = [d for d in details if d.get("TakedownStatus", "").lower() == st_lower]
+        if title:
+            t_lower = title.lower()
+            details = [d for d in details if isinstance(d.get("Details"), dict) and t_lower in d["Details"].get("Title", "").lower()]
+        return result, details
 
-    if days is not None:
-        details = _filter_by_date(details, "FoundDate", days)
+    try:
+        result, details = _fetch_and_filter()
+        ids = _extract_ids(result)
 
-    click.echo(format_output(details, config.output_format, config.limit))
+        if not ids:
+            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            return
+
+        if not auto_poll:
+            click.echo(format_output(details, config.output_format, config.limit, config.search))
+        else:
+            import time as _time
+            seen_ids: set[str] = set()
+            for item in details:
+                item_id = _extract_item_id(item)
+                if item_id:
+                    seen_ids.add(item_id)
+            click.echo(f"Polling for new results every {interval}s (Ctrl+C to stop)...", err=True)
+            while True:
+                _time.sleep(interval)
+                _, new_details = _fetch_and_filter()
+                for item in new_details:
+                    item_id = _extract_item_id(item)
+                    if item_id and item_id not in seen_ids:
+                        seen_ids.add(item_id)
+                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+    except KeyboardInterrupt:
+        click.echo("\nStopped polling.", err=True)
+    except R7Error as exc:
+        click.echo(str(exc), err=True)
+        sys.exit(exc.exit_code)
 
 
 # ---------------------------------------------------------------------------
@@ -356,10 +774,10 @@ def risk_score(ctx, fail_above):
         click.echo(str(result))
         score = result
     elif isinstance(result, dict):
-        click.echo(format_output(result, config.output_format, config.limit))
+        click.echo(format_output(result, config.output_format, config.limit, config.search))
         score = result.get("Score", result.get("score"))
     else:
-        click.echo(format_output(result, config.output_format, config.limit))
+        click.echo(format_output(result, config.output_format, config.limit, config.search))
         score = None
 
     if fail_above is not None and score is not None and score > fail_above:
@@ -378,8 +796,10 @@ def reported_domains(ctx):
 
 
 @reported_domains.command("list")
+@click.option("-a", "--auto", "auto_poll", is_flag=True, help="Poll for new entries and only print new ones.")
+@click.option("-i", "--interval", type=int, default=10, help="Polling interval in seconds (default: 10).")
 @click.pass_context
-def reported_domains_list(ctx):
+def reported_domains_list(ctx, auto_poll, interval):
     """List domains reported to external registries."""
     config = _get_config(ctx)
     _require_token(config)
@@ -388,35 +808,67 @@ def reported_domains_list(ctx):
 
     url = f"{DRP_BASE}/public/v2/data/alerts/alerts-list"
     params = {"remediationStatus": "CompletedSuccessfully"}
-    result = client.get(url, params=params, auth=auth, solution="drp",
-                        subcommand="reported-domains-list")
 
-    ids = _extract_ids(result)
-    if not ids:
-        click.echo("No reported domains found.", err=True)
-        return
+    def _fetch_reported():
+        result = client.get(url, params=params, auth=auth, solution="drp",
+                            subcommand="reported-domains-list")
+        ids = _extract_ids(result)
+        if not ids:
+            return []
+        results_list: list[dict] = []
+        for item_id in ids:
+            if config.limit is not None and len(results_list) >= config.limit:
+                break
+            report_url = f"{DRP_BASE}/public/v1/data/alerts/report-status/{item_id}"
+            report = client.get(report_url, auth=auth, solution="drp", subcommand="report-status")
+            if isinstance(report, list) and not report:
+                continue
+            services = report if isinstance(report, list) else report.get("Services", report.get("services", []))
+            if isinstance(services, list) and any(s.get("Status") == "Sent" for s in services):
+                results_list.append(report)
+        return results_list
 
-    results: list[dict] = []
-    for item_id in ids:
-        if config.limit is not None and len(results) >= config.limit:
-            break
-        report_url = f"{DRP_BASE}/public/v1/data/alerts/report-status/{item_id}"
-        report = client.get(report_url, auth=auth, solution="drp", subcommand="report-status")
+    try:
+        results = _fetch_reported()
 
-        # Skip empty arrays
-        if isinstance(report, list) and not report:
-            continue
-
-        # Filter: at least one service with Status=Sent
-        services = report if isinstance(report, list) else report.get("Services", report.get("services", []))
-        if isinstance(services, list) and any(s.get("Status") == "Sent" for s in services):
-            results.append(report)
-
-    if not results:
-        click.echo(format_output([], config.output_format, config.limit))
-        return
-
-    click.echo(format_output(results, config.output_format, config.limit))
+        if not results:
+            if not auto_poll:
+                click.echo("No reported domains found.", err=True)
+                return
+            click.echo(f"Polling for new results every {interval}s (Ctrl+C to stop)...", err=True)
+            import time as _time
+            seen_ids: set[str] = set()
+            while True:
+                _time.sleep(interval)
+                new_results = _fetch_reported()
+                for item in new_results:
+                    item_id = _extract_item_id(item)
+                    if item_id and item_id not in seen_ids:
+                        seen_ids.add(item_id)
+                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+        elif not auto_poll:
+            click.echo(format_output(results, config.output_format, config.limit, config.search))
+        else:
+            import time as _time
+            seen_ids: set[str] = set()
+            for item in results:
+                item_id = _extract_item_id(item)
+                if item_id:
+                    seen_ids.add(item_id)
+            click.echo(f"Polling for new results every {interval}s (Ctrl+C to stop)...", err=True)
+            while True:
+                _time.sleep(interval)
+                new_results = _fetch_reported()
+                for item in new_results:
+                    item_id = _extract_item_id(item)
+                    if item_id and item_id not in seen_ids:
+                        seen_ids.add(item_id)
+                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+    except KeyboardInterrupt:
+        click.echo("\nStopped polling.", err=True)
+    except R7Error as exc:
+        click.echo(str(exc), err=True)
+        sys.exit(exc.exit_code)
 
 
 # ---------------------------------------------------------------------------
@@ -431,24 +883,108 @@ def ssl_cert_threats(ctx):
 
 
 @ssl_cert_threats.command("list")
+@click.option("-a", "--auto", "auto_poll", is_flag=True, help="Poll for new entries and only print new ones.")
+@click.option("-i", "--interval", type=int, default=10, help="Polling interval in seconds (default: 10).")
+@click.option("--domain", default=None, help="Filter by matched domain (substring match).")
+@click.option("--common-name", default=None, help="Filter by CommonName (substring match).")
+@click.option("--expired", type=click.Choice(["true", "false"], case_sensitive=False), default=None, help="Filter by expired status.")
+@click.option("--name-mismatch", type=click.Choice(["true", "false"], case_sensitive=False), default=None, help="Filter by name mismatch status.")
+@click.option("--valid", type=click.Choice(["true", "false"], case_sensitive=False), default=None, help="Filter by valid status.")
 @click.pass_context
-def ssl_cert_threats_list(ctx):
-    """List SSL certificate threats."""
+def ssl_cert_threats_list(ctx, auto_poll, interval, domain, common_name, expired, name_mismatch, valid):
+    """List SSL certificate threats.
+
+    \b
+    Examples:
+      # List all SSL cert threats
+      r7-cli drp ssl-cert-threats list
+
+    \b
+      # Filter by matched domain
+      r7-cli drp ssl-cert-threats list --domain 'anonymoose.com'
+
+    \b
+      # Only expired certificates
+      r7-cli drp ssl-cert-threats list --expired true
+
+    \b
+      # Certificates with name mismatch
+      r7-cli drp ssl-cert-threats list --name-mismatch true
+
+    \b
+      # Only invalid certificates
+      r7-cli drp ssl-cert-threats list --valid false
+
+    \b
+      # Filter by CommonName
+      r7-cli drp ssl-cert-threats list --common-name 'bitsmith'
+    """
     config = _get_config(ctx)
     _require_token(config)
     client = _drp_client(config)
 
     url = f"{DRP_BASE}/public/v1/data/ssl-certificate-threats/threats-list"
-    result = client.get(url, auth=_drp_auth(config), solution="drp", subcommand="ssl-cert-threats-list")
-
-    ids = _extract_ids(result)
-    if not ids:
-        click.echo(format_output(result, config.output_format, config.limit))
-        return
-
     detail_url = f"{DRP_BASE}/public/v1/data/ssl-certificate-threats/get-complete-threat/{{id}}"
-    details = _fetch_details(client, config, ids, detail_url, config.limit)
-    click.echo(format_output(details, config.output_format, config.limit))
+
+    def _fetch_all():
+        result = client.get(url, auth=_drp_auth(config), solution="drp", subcommand="ssl-cert-threats-list")
+        ids = _extract_ids(result)
+        if not ids:
+            return result, []
+        details = _fetch_details(client, config, ids, detail_url, config.limit)
+        return result, details
+
+    try:
+        result, details = _fetch_all()
+        ids = _extract_ids(result)
+
+        if not ids:
+            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            return
+
+        if not auto_poll:
+            # Apply client-side filters
+            if any([domain, common_name, expired, name_mismatch, valid]):
+                filtered = details
+                if domain:
+                    d_lower = domain.lower()
+                    filtered = [t for t in filtered if any(d_lower in a.lower() for a in t.get("MatchedAssets", []))]
+                if common_name:
+                    cn_lower = common_name.lower()
+                    filtered = [t for t in filtered if cn_lower in t.get("CommonName", "").lower()]
+                if expired is not None:
+                    exp_val = expired.lower() == "true"
+                    filtered = [t for t in filtered if isinstance(t.get("CertificateStatus"), dict) and t["CertificateStatus"].get("Certificate expired") is exp_val]
+                if name_mismatch is not None:
+                    nm_val = name_mismatch.lower() == "true"
+                    filtered = [t for t in filtered if isinstance(t.get("CertificateStatus"), dict) and t["CertificateStatus"].get("Certificate name mismatch") is nm_val]
+                if valid is not None:
+                    v_val = valid.lower() == "true"
+                    filtered = [t for t in filtered if isinstance(t.get("CertificateStatus"), dict) and t["CertificateStatus"].get("Valid") is v_val]
+                click.echo(format_output(filtered, config.output_format, config.limit, config.search))
+            else:
+                click.echo(format_output(details, config.output_format, config.limit, config.search))
+        else:
+            import time as _time
+            seen_ids: set[str] = set()
+            for item in details:
+                item_id = _extract_item_id(item)
+                if item_id:
+                    seen_ids.add(item_id)
+            click.echo(f"Polling for new results every {interval}s (Ctrl+C to stop)...", err=True)
+            while True:
+                _time.sleep(interval)
+                _, new_details = _fetch_all()
+                for item in new_details:
+                    item_id = _extract_item_id(item)
+                    if item_id and item_id not in seen_ids:
+                        seen_ids.add(item_id)
+                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+    except KeyboardInterrupt:
+        click.echo("\nStopped polling.", err=True)
+    except R7Error as exc:
+        click.echo(str(exc), err=True)
+        sys.exit(exc.exit_code)
 
 
 # ---------------------------------------------------------------------------
@@ -463,24 +999,98 @@ def ssl_issue_threats(ctx):
 
 
 @ssl_issue_threats.command("list")
+@click.option("-a", "--auto", "auto_poll", is_flag=True, help="Poll for new entries and only print new ones.")
+@click.option("-i", "--interval", type=int, default=10, help="Polling interval in seconds (default: 10).")
+@click.option("--domain", default=None, help="Filter by matched domain (substring match).")
+@click.option("--ip", default=None, help="Filter by server IP address (substring match).")
+@click.option("--issue", default=None, help="Filter by detected issue name or title (substring match).")
 @click.pass_context
-def ssl_issue_threats_list(ctx):
-    """List SSL issue threats."""
+def ssl_issue_threats_list(ctx, auto_poll, interval, domain, ip, issue):
+    """List SSL issue threats.
+
+    \b
+    Examples:
+      # List all SSL issue threats
+      r7-cli drp ssl-issue-threats list
+
+    \b
+      # Filter by matched domain
+      r7-cli drp ssl-issue-threats list --domain 'anonymoose.com'
+
+    \b
+      # Filter by server IP
+      r7-cli drp ssl-issue-threats list --ip '157.245'
+
+    \b
+      # Filter by issue type
+      r7-cli drp ssl-issue-threats list --issue 'TLS 1.0'
+
+    \b
+      # Combine filters
+      r7-cli drp ssl-issue-threats list --domain 'anonymoose' --issue 'handshake'
+    """
     config = _get_config(ctx)
     _require_token(config)
     client = _drp_client(config)
 
     url = f"{DRP_BASE}/public/v1/data/ssl-issues-threats/threats-list"
-    result = client.get(url, auth=_drp_auth(config), solution="drp", subcommand="ssl-issue-threats-list")
-
-    ids = _extract_ids(result)
-    if not ids:
-        click.echo(format_output(result, config.output_format, config.limit))
-        return
-
     detail_url = f"{DRP_BASE}/public/v1/data/ssl-issues-threats/get-complete-threat/{{id}}"
-    details = _fetch_details(client, config, ids, detail_url, config.limit)
-    click.echo(format_output(details, config.output_format, config.limit))
+
+    def _fetch_all():
+        result = client.get(url, auth=_drp_auth(config), solution="drp", subcommand="ssl-issue-threats-list")
+        ids = _extract_ids(result)
+        if not ids:
+            return result, []
+        details = _fetch_details(client, config, ids, detail_url, config.limit)
+        return result, details
+
+    try:
+        result, details = _fetch_all()
+        ids = _extract_ids(result)
+
+        if not ids:
+            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            return
+
+        if not auto_poll:
+            # Apply client-side filters
+            if any([domain, ip, issue]):
+                filtered = details
+                if domain:
+                    d_lower = domain.lower()
+                    filtered = [t for t in filtered if any(d_lower in a.lower() for a in t.get("MatchedAssets", []))]
+                if ip:
+                    filtered = [t for t in filtered if ip in t.get("ServerIPAddress", "")]
+                if issue:
+                    i_lower = issue.lower()
+                    filtered = [t for t in filtered if any(
+                        i_lower in di.get("name", "").lower() or i_lower in di.get("title", "").lower()
+                        for di in t.get("DetectedIssues", [])
+                    )]
+                click.echo(format_output(filtered, config.output_format, config.limit, config.search))
+            else:
+                click.echo(format_output(details, config.output_format, config.limit, config.search))
+        else:
+            import time as _time
+            seen_ids: set[str] = set()
+            for item in details:
+                item_id = _extract_item_id(item)
+                if item_id:
+                    seen_ids.add(item_id)
+            click.echo(f"Polling for new results every {interval}s (Ctrl+C to stop)...", err=True)
+            while True:
+                _time.sleep(interval)
+                _, new_details = _fetch_all()
+                for item in new_details:
+                    item_id = _extract_item_id(item)
+                    if item_id and item_id not in seen_ids:
+                        seen_ids.add(item_id)
+                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+    except KeyboardInterrupt:
+        click.echo("\nStopped polling.", err=True)
+    except R7Error as exc:
+        click.echo(str(exc), err=True)
+        sys.exit(exc.exit_code)
 
 
 # ---------------------------------------------------------------------------

@@ -41,6 +41,35 @@ _ACCT_DOC = "https://help.rapid7.com/insightAccount/en-us/api/v1/docs.html"
 _CRED_DOC = "https://help.rapid7.com/credentialmanagement/en-us/api/v1/docs.html"
 
 
+def _extract_items(data) -> list[dict]:
+    """Find the largest list of dicts in the response."""
+    if isinstance(data, list):
+        if data and isinstance(data[0], dict):
+            return data
+        return []
+    if isinstance(data, dict):
+        best: list[dict] = []
+        for val in data.values():
+            if isinstance(val, list) and val and isinstance(val[0], dict):
+                if len(val) > len(best):
+                    best = val
+            elif isinstance(val, dict):
+                nested = _extract_items(val)
+                if len(nested) > len(best):
+                    best = nested
+        return best
+    return []
+
+
+def _extract_item_id(item: dict) -> str:
+    """Extract the best available ID from a dict."""
+    for key in ("id", "_id", "workflowId", "job_id", "rrn"):
+        val = item.get(key, "")
+        if val:
+            return str(val)
+    return ""
+
+
 @click.group(cls=GlobalFlagHintGroup)
 @click.pass_context
 def platform(ctx):
@@ -57,7 +86,7 @@ def validate(ctx):
     url = INSIGHT_BASE.format(region=config.region) + "/validate"
     try:
         result = client.get(url, solution="platform", subcommand="validate")
-        click.echo(format_output(result, config.output_format, config.limit))
+        click.echo(format_output(result, config.output_format, config.limit, config.search))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -98,7 +127,7 @@ def search(ctx, search_type, query, sort_field, sort_order, from_, size):
 
     try:
         result = client.post(url, json=payload, solution="platform", subcommand="search")
-        click.echo(format_output(result, config.output_format, config.limit))
+        click.echo(format_output(result, config.output_format, config.limit, config.search))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -117,8 +146,10 @@ def users(ctx):
 
 
 @users.command("list")
+@click.option("-a", "--auto", "auto_poll", is_flag=True, help="Poll for new entries and only print new ones.")
+@click.option("-i", "--interval", type=int, default=10, help="Polling interval in seconds (default: 10).")
 @click.pass_context
-def users_list(ctx):
+def users_list(ctx, auto_poll, interval):
     """List all users in the Insight Account."""
     config = _get_config(ctx)
     client = R7Client(config)
@@ -129,7 +160,29 @@ def users_list(ctx):
 
     try:
         result = client.get(url, solution="platform", subcommand="users-list")
-        click.echo(format_output(result, config.output_format, config.limit))
+
+        if not auto_poll:
+            click.echo(format_output(result, config.output_format, config.limit, config.search))
+        else:
+            import time as _time
+            seen_ids: set[str] = set()
+            items = _extract_items(result)
+            for item in items:
+                item_id = _extract_item_id(item)
+                if item_id:
+                    seen_ids.add(item_id)
+            click.echo(f"Polling for new results every {interval}s (Ctrl+C to stop)...", err=True)
+            while True:
+                _time.sleep(interval)
+                new_result = client.get(url, solution="platform", subcommand="users-list")
+                new_items = _extract_items(new_result)
+                for item in new_items:
+                    item_id = _extract_item_id(item)
+                    if item_id and item_id not in seen_ids:
+                        seen_ids.add(item_id)
+                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+    except KeyboardInterrupt:
+        click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -149,7 +202,7 @@ def users_get(ctx, user_id):
 
     try:
         result = client.get(url, solution="platform", subcommand="users-get")
-        click.echo(format_output(result, config.output_format, config.limit))
+        click.echo(format_output(result, config.output_format, config.limit, config.search))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -174,7 +227,7 @@ def users_create(ctx, data_str, data_file):
 
     try:
         result = client.post(url, json=body, solution="platform", subcommand="users-create")
-        click.echo(format_output(result, config.output_format, config.limit))
+        click.echo(format_output(result, config.output_format, config.limit, config.search))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -194,7 +247,7 @@ def users_delete(ctx, user_id):
 
     try:
         result = client.request("DELETE", url, solution="platform", subcommand="users-delete")
-        click.echo(format_output(result, config.output_format, config.limit))
+        click.echo(format_output(result, config.output_format, config.limit, config.search))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -212,8 +265,10 @@ def orgs(ctx):
 
 
 @orgs.command("list")
+@click.option("-a", "--auto", "auto_poll", is_flag=True, help="Poll for new entries and only print new ones.")
+@click.option("-i", "--interval", type=int, default=10, help="Polling interval in seconds (default: 10).")
 @click.pass_context
-def orgs_list(ctx):
+def orgs_list(ctx, auto_poll, interval):
     """List organizations in the Insight Account."""
     config = _get_config(ctx)
     client = R7Client(config)
@@ -224,7 +279,29 @@ def orgs_list(ctx):
 
     try:
         result = client.get(url, solution="platform", subcommand="orgs-list")
-        click.echo(format_output(result, config.output_format, config.limit))
+
+        if not auto_poll:
+            click.echo(format_output(result, config.output_format, config.limit, config.search))
+        else:
+            import time as _time
+            seen_ids: set[str] = set()
+            items = _extract_items(result)
+            for item in items:
+                item_id = _extract_item_id(item)
+                if item_id:
+                    seen_ids.add(item_id)
+            click.echo(f"Polling for new results every {interval}s (Ctrl+C to stop)...", err=True)
+            while True:
+                _time.sleep(interval)
+                new_result = client.get(url, solution="platform", subcommand="orgs-list")
+                new_items = _extract_items(new_result)
+                for item in new_items:
+                    item_id = _extract_item_id(item)
+                    if item_id and item_id not in seen_ids:
+                        seen_ids.add(item_id)
+                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+    except KeyboardInterrupt:
+        click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -243,7 +320,7 @@ def orgs_managed(ctx):
 
     try:
         result = client.get(url, solution="platform", subcommand="orgs-managed")
-        click.echo(format_output(result, config.output_format, config.limit))
+        click.echo(format_output(result, config.output_format, config.limit, config.search))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -261,8 +338,10 @@ def products(ctx):
 
 
 @products.command("list")
+@click.option("-a", "--auto", "auto_poll", is_flag=True, help="Poll for new entries and only print new ones.")
+@click.option("-i", "--interval", type=int, default=10, help="Polling interval in seconds (default: 10).")
 @click.pass_context
-def products_list(ctx):
+def products_list(ctx, auto_poll, interval):
     """List products in the Insight Account."""
     config = _get_config(ctx)
     client = R7Client(config)
@@ -273,7 +352,29 @@ def products_list(ctx):
 
     try:
         result = client.get(url, solution="platform", subcommand="products-list")
-        click.echo(format_output(result, config.output_format, config.limit))
+
+        if not auto_poll:
+            click.echo(format_output(result, config.output_format, config.limit, config.search))
+        else:
+            import time as _time
+            seen_ids: set[str] = set()
+            items = _extract_items(result)
+            for item in items:
+                item_id = _extract_item_id(item)
+                if item_id:
+                    seen_ids.add(item_id)
+            click.echo(f"Polling for new results every {interval}s (Ctrl+C to stop)...", err=True)
+            while True:
+                _time.sleep(interval)
+                new_result = client.get(url, solution="platform", subcommand="products-list")
+                new_items = _extract_items(new_result)
+                for item in new_items:
+                    item_id = _extract_item_id(item)
+                    if item_id and item_id not in seen_ids:
+                        seen_ids.add(item_id)
+                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+    except KeyboardInterrupt:
+        click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -293,7 +394,7 @@ def products_get(ctx, product_token):
 
     try:
         result = client.get(url, solution="platform", subcommand="products-get")
-        click.echo(format_output(result, config.output_format, config.limit))
+        click.echo(format_output(result, config.output_format, config.limit, config.search))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -311,8 +412,10 @@ def roles(ctx):
 
 
 @roles.command("list")
+@click.option("-a", "--auto", "auto_poll", is_flag=True, help="Poll for new entries and only print new ones.")
+@click.option("-i", "--interval", type=int, default=10, help="Polling interval in seconds (default: 10).")
 @click.pass_context
-def roles_list(ctx):
+def roles_list(ctx, auto_poll, interval):
     """List roles in the Insight Account."""
     config = _get_config(ctx)
     client = R7Client(config)
@@ -323,7 +426,29 @@ def roles_list(ctx):
 
     try:
         result = client.get(url, solution="platform", subcommand="roles-list")
-        click.echo(format_output(result, config.output_format, config.limit))
+
+        if not auto_poll:
+            click.echo(format_output(result, config.output_format, config.limit, config.search))
+        else:
+            import time as _time
+            seen_ids: set[str] = set()
+            items = _extract_items(result)
+            for item in items:
+                item_id = _extract_item_id(item)
+                if item_id:
+                    seen_ids.add(item_id)
+            click.echo(f"Polling for new results every {interval}s (Ctrl+C to stop)...", err=True)
+            while True:
+                _time.sleep(interval)
+                new_result = client.get(url, solution="platform", subcommand="roles-list")
+                new_items = _extract_items(new_result)
+                for item in new_items:
+                    item_id = _extract_item_id(item)
+                    if item_id and item_id not in seen_ids:
+                        seen_ids.add(item_id)
+                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+    except KeyboardInterrupt:
+        click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -343,7 +468,7 @@ def roles_get(ctx, role_id):
 
     try:
         result = client.get(url, solution="platform", subcommand="roles-get")
-        click.echo(format_output(result, config.output_format, config.limit))
+        click.echo(format_output(result, config.output_format, config.limit, config.search))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -368,7 +493,7 @@ def roles_create(ctx, data_str, data_file):
 
     try:
         result = client.post(url, json=body, solution="platform", subcommand="roles-create")
-        click.echo(format_output(result, config.output_format, config.limit))
+        click.echo(format_output(result, config.output_format, config.limit, config.search))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -388,7 +513,7 @@ def roles_delete(ctx, role_id):
 
     try:
         result = client.request("DELETE", url, solution="platform", subcommand="roles-delete")
-        click.echo(format_output(result, config.output_format, config.limit))
+        click.echo(format_output(result, config.output_format, config.limit, config.search))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -406,8 +531,10 @@ def api_keys(ctx):
 
 
 @api_keys.command("list")
+@click.option("-a", "--auto", "auto_poll", is_flag=True, help="Poll for new entries and only print new ones.")
+@click.option("-i", "--interval", type=int, default=10, help="Polling interval in seconds (default: 10).")
 @click.pass_context
-def api_keys_list(ctx):
+def api_keys_list(ctx, auto_poll, interval):
     """List API keys."""
     config = _get_config(ctx)
     client = R7Client(config)
@@ -418,7 +545,29 @@ def api_keys_list(ctx):
 
     try:
         result = client.get(url, solution="platform", subcommand="api-keys-list")
-        click.echo(format_output(result, config.output_format, config.limit))
+
+        if not auto_poll:
+            click.echo(format_output(result, config.output_format, config.limit, config.search))
+        else:
+            import time as _time
+            seen_ids: set[str] = set()
+            items = _extract_items(result)
+            for item in items:
+                item_id = _extract_item_id(item)
+                if item_id:
+                    seen_ids.add(item_id)
+            click.echo(f"Polling for new results every {interval}s (Ctrl+C to stop)...", err=True)
+            while True:
+                _time.sleep(interval)
+                new_result = client.get(url, solution="platform", subcommand="api-keys-list")
+                new_items = _extract_items(new_result)
+                for item in new_items:
+                    item_id = _extract_item_id(item)
+                    if item_id and item_id not in seen_ids:
+                        seen_ids.add(item_id)
+                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+    except KeyboardInterrupt:
+        click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -443,7 +592,7 @@ def api_keys_create(ctx, data_str, data_file):
 
     try:
         result = client.post(url, json=body, solution="platform", subcommand="api-keys-create")
-        click.echo(format_output(result, config.output_format, config.limit))
+        click.echo(format_output(result, config.output_format, config.limit, config.search))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -463,7 +612,7 @@ def api_keys_delete(ctx, apikey_id):
 
     try:
         result = client.request("DELETE", url, solution="platform", subcommand="api-keys-delete")
-        click.echo(format_output(result, config.output_format, config.limit))
+        click.echo(format_output(result, config.output_format, config.limit, config.search))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -481,8 +630,10 @@ def features(ctx):
 
 
 @features.command("list")
+@click.option("-a", "--auto", "auto_poll", is_flag=True, help="Poll for new entries and only print new ones.")
+@click.option("-i", "--interval", type=int, default=10, help="Polling interval in seconds (default: 10).")
 @click.pass_context
-def features_list(ctx):
+def features_list(ctx, auto_poll, interval):
     """List available features."""
     config = _get_config(ctx)
     client = R7Client(config)
@@ -493,7 +644,29 @@ def features_list(ctx):
 
     try:
         result = client.get(url, solution="platform", subcommand="features-list")
-        click.echo(format_output(result, config.output_format, config.limit))
+
+        if not auto_poll:
+            click.echo(format_output(result, config.output_format, config.limit, config.search))
+        else:
+            import time as _time
+            seen_ids: set[str] = set()
+            items = _extract_items(result)
+            for item in items:
+                item_id = _extract_item_id(item)
+                if item_id:
+                    seen_ids.add(item_id)
+            click.echo(f"Polling for new results every {interval}s (Ctrl+C to stop)...", err=True)
+            while True:
+                _time.sleep(interval)
+                new_result = client.get(url, solution="platform", subcommand="features-list")
+                new_items = _extract_items(new_result)
+                for item in new_items:
+                    item_id = _extract_item_id(item)
+                    if item_id and item_id not in seen_ids:
+                        seen_ids.add(item_id)
+                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+    except KeyboardInterrupt:
+        click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -511,8 +684,10 @@ def user_groups(ctx):
 
 
 @user_groups.command("list")
+@click.option("-a", "--auto", "auto_poll", is_flag=True, help="Poll for new entries and only print new ones.")
+@click.option("-i", "--interval", type=int, default=10, help="Polling interval in seconds (default: 10).")
 @click.pass_context
-def user_groups_list(ctx):
+def user_groups_list(ctx, auto_poll, interval):
     """List user groups."""
     config = _get_config(ctx)
     client = R7Client(config)
@@ -523,7 +698,29 @@ def user_groups_list(ctx):
 
     try:
         result = client.get(url, solution="platform", subcommand="user-groups-list")
-        click.echo(format_output(result, config.output_format, config.limit))
+
+        if not auto_poll:
+            click.echo(format_output(result, config.output_format, config.limit, config.search))
+        else:
+            import time as _time
+            seen_ids: set[str] = set()
+            items = _extract_items(result)
+            for item in items:
+                item_id = _extract_item_id(item)
+                if item_id:
+                    seen_ids.add(item_id)
+            click.echo(f"Polling for new results every {interval}s (Ctrl+C to stop)...", err=True)
+            while True:
+                _time.sleep(interval)
+                new_result = client.get(url, solution="platform", subcommand="user-groups-list")
+                new_items = _extract_items(new_result)
+                for item in new_items:
+                    item_id = _extract_item_id(item)
+                    if item_id and item_id not in seen_ids:
+                        seen_ids.add(item_id)
+                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+    except KeyboardInterrupt:
+        click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -543,7 +740,7 @@ def user_groups_get(ctx, group_id):
 
     try:
         result = client.get(url, solution="platform", subcommand="user-groups-get")
-        click.echo(format_output(result, config.output_format, config.limit))
+        click.echo(format_output(result, config.output_format, config.limit, config.search))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -568,7 +765,7 @@ def user_groups_create(ctx, data_str, data_file):
 
     try:
         result = client.post(url, json=body, solution="platform", subcommand="user-groups-create")
-        click.echo(format_output(result, config.output_format, config.limit))
+        click.echo(format_output(result, config.output_format, config.limit, config.search))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -588,7 +785,7 @@ def user_groups_delete(ctx, group_id):
 
     try:
         result = client.request("DELETE", url, solution="platform", subcommand="user-groups-delete")
-        click.echo(format_output(result, config.output_format, config.limit))
+        click.echo(format_output(result, config.output_format, config.limit, config.search))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -609,8 +806,10 @@ def credentials(ctx):
 @click.argument("org_id")
 @click.option("--page", type=int, default=0, help="Page index (0-based).")
 @click.option("--size", type=int, default=20, help="Page size (default: 20).")
+@click.option("-a", "--auto", "auto_poll", is_flag=True, help="Poll for new entries and only print new ones.")
+@click.option("-i", "--interval", type=int, default=10, help="Polling interval in seconds (default: 10).")
 @click.pass_context
-def credentials_list(ctx, org_id, page, size):
+def credentials_list(ctx, org_id, page, size, auto_poll, interval):
     """List credentials for an organization."""
     config = _get_config(ctx)
     client = R7Client(config)
@@ -623,7 +822,29 @@ def credentials_list(ctx, org_id, page, size):
 
     try:
         result = client.get(url, params=params, solution="platform", subcommand="credentials-list")
-        click.echo(format_output(result, config.output_format, config.limit))
+
+        if not auto_poll:
+            click.echo(format_output(result, config.output_format, config.limit, config.search))
+        else:
+            import time as _time
+            seen_ids: set[str] = set()
+            items = _extract_items(result)
+            for item in items:
+                item_id = _extract_item_id(item)
+                if item_id:
+                    seen_ids.add(item_id)
+            click.echo(f"Polling for new results every {interval}s (Ctrl+C to stop)...", err=True)
+            while True:
+                _time.sleep(interval)
+                new_result = client.get(url, params=params, solution="platform", subcommand="credentials-list")
+                new_items = _extract_items(new_result)
+                for item in new_items:
+                    item_id = _extract_item_id(item)
+                    if item_id and item_id not in seen_ids:
+                        seen_ids.add(item_id)
+                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+    except KeyboardInterrupt:
+        click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -643,7 +864,7 @@ def credentials_get(ctx, rrn):
 
     try:
         result = client.get(url, solution="platform", subcommand="credentials-get")
-        click.echo(format_output(result, config.output_format, config.limit))
+        click.echo(format_output(result, config.output_format, config.limit, config.search))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -668,7 +889,7 @@ def credentials_create(ctx, data_str, data_file):
 
     try:
         result = client.post(url, json=body, solution="platform", subcommand="credentials-create")
-        click.echo(format_output(result, config.output_format, config.limit))
+        click.echo(format_output(result, config.output_format, config.limit, config.search))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -688,7 +909,7 @@ def credentials_delete(ctx, rrn):
 
     try:
         result = client.request("DELETE", url, solution="platform", subcommand="credentials-delete")
-        click.echo(format_output(result, config.output_format, config.limit))
+        click.echo(format_output(result, config.output_format, config.limit, config.search))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
