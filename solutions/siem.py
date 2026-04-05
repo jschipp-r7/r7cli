@@ -101,6 +101,18 @@ _VALID_QUARANTINE_STATES = (
 _MS_PER_DAY = 86_400_000
 
 
+def _ms_to_human(ms: int) -> str:
+    """Convert milliseconds to a human-readable duration string."""
+    days = ms // _MS_PER_DAY
+    if days >= 365 and days % 365 == 0:
+        years = days // 365
+        return f"{years} year{'s' if years != 1 else ''}"
+    if days >= 30 and days % 30 == 0:
+        months = days // 30
+        return f"{months} month{'s' if months != 1 else ''}"
+    return f"{days} day{'s' if days != 1 else ''}"
+
+
 # ---------------------------------------------------------------------------
 # Click groups
 # ---------------------------------------------------------------------------
@@ -232,10 +244,21 @@ def health_metrics(ctx, resource_type, auto_poll, interval, state, health_name, 
 
 
 # ---------------------------------------------------------------------------
-# siem logsets
+# siem logs
 # ---------------------------------------------------------------------------
 
 @siem.group(cls=GlobalFlagHintGroup)
+@click.pass_context
+def logs(ctx):
+    """IDR log query commands."""
+    pass
+
+
+# ---------------------------------------------------------------------------
+# siem logs logsets
+# ---------------------------------------------------------------------------
+
+@logs.group(cls=GlobalFlagHintGroup)
 @click.pass_context
 def logsets(ctx):
     """IDR logset commands."""
@@ -281,17 +304,6 @@ def logsets_list(ctx, auto_poll, interval):
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
-
-
-# ---------------------------------------------------------------------------
-# siem logs
-# ---------------------------------------------------------------------------
-
-@siem.group(cls=GlobalFlagHintGroup)
-@click.pass_context
-def logs(ctx):
-    """IDR log query commands."""
-    pass
 
 
 def _resolve_log_ids(client: R7Client, config: Config, logset_name: str, time_range: str) -> list[str]:
@@ -484,7 +496,7 @@ def log_storage(ctx, from_date, to_date):
 @click.option("--min-days", type=int, default=None, help="Exit non-zero if retention < threshold days.")
 @click.pass_context
 def log_retention(ctx, min_days):
-    """Retrieve IDR log retention settings (converted from ms to days).
+    """Retrieve IDR log retention settings with human-readable durations.
 
     \b
     Examples:
@@ -502,19 +514,30 @@ def log_retention(ctx, min_days):
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
 
-    for field in ("max_retention_period", "retention_period", "cold_retention"):
-        ms_val = result.get(field)
+    _PERIOD_FIELDS = ("max_retention_period", "retention_period", "cold_retention")
+
+    # Determine the target dict (flat vs nested under "account")
+    target = result.get("account") if isinstance(result.get("account"), dict) else result
+
+    # Grab raw retention_period in ms before we overwrite it
+    raw_retention_ms = target.get("retention_period")
+
+    for field in _PERIOD_FIELDS:
+        ms_val = target.get(field)
         if ms_val is not None:
             try:
-                result[field] = int(ms_val) // _MS_PER_DAY
+                target[field] = _ms_to_human(int(ms_val))
             except (TypeError, ValueError):
                 pass
 
     click.echo(format_output(result, config.output_format, config.limit, config.search))
 
-    if min_days is not None:
-        retention_days = result.get("retention_period")
-        if isinstance(retention_days, (int, float)) and retention_days < min_days:
+    if min_days is not None and raw_retention_ms is not None:
+        try:
+            retention_days = int(raw_retention_ms) // _MS_PER_DAY
+        except (TypeError, ValueError):
+            retention_days = None
+        if retention_days is not None and retention_days < min_days:
             click.echo(
                 f"Retention {retention_days} days is below threshold {min_days} days",
                 err=True,
@@ -534,60 +557,50 @@ def event_sources(ctx):
 
 
 @event_sources.command("list")
-@click.option("-g", "--log-id", default=None, help="Log ID to query event sources for.")
-@click.option("-n", "--logset-name", default=None, help="Logset name (resolves to Log_IDs).")
 @click.option("-a", "--auto", "auto_poll", is_flag=True, help="Poll for new entries and only print new ones.")
 @click.option("-i", "--interval", type=int, default=10, help="Polling interval in seconds (default: 10).")
+@click.option("--state", default=None, help="Filter by state (e.g. RUNNING, WARNING, FATAL_ERROR, ONLINE, HEALTHY).")
+@click.option("--name", "es_name", default=None, help="Filter by name (substring match).")
+@click.option("--issues-only", is_flag=True, help="Show only event sources with issues.")
 @click.pass_context
-def event_sources_list(ctx, log_id, logset_name, auto_poll, interval):
-    """List event sources for a log or logset."""
+def event_sources_list(ctx, auto_poll, interval, state, es_name, issues_only):
+    """List event sources via the health-metrics API.
+
+    \b
+    Examples:
+      r7-cli siem event-sources list
+      r7-cli siem event-sources list --state WARNING
+      r7-cli siem event-sources list --name 'AWS'
+      r7-cli siem event-sources list --issues-only
+      r7-cli siem event-sources list -a -i 30
+    """
     config = _get_config(ctx)
     client = R7Client(config)
-    base = IDR_LOGS_BASE.format(region=config.region)
+    base = IDR_V1_BASE.format(region=config.region)
+    url = f"{base}/health-metrics"
+    params = {"resourceTypes": "event_sources"}
 
-    if not log_id and not logset_name:
-        click.echo(
-            "Provide either --log-id or --logset-name.\n\n"
-            "Examples:\n"
-            "  r7-cli siem event-sources list --log-id <LOG_ID>\n"
-            "  r7-cli siem event-sources list --logset-name 'My Logset'\n",
-            err=True,
-        )
-        sys.exit(1)
+    has_filters = any([state, es_name, issues_only])
 
     try:
-        log_ids: list[str] = []
-        if log_id:
-            log_ids = [log_id]
-        else:
-            log_ids = _resolve_log_ids(client, config, logset_name, "Last 1 day")
-
-        if not log_ids:
-            click.echo(f"No Log_IDs found for logset '{logset_name}'.", err=True)
-            sys.exit(1)
+        result = client.get(url, params=params, solution="siem", subcommand="event-sources-list")
 
         if not auto_poll:
-            # If single log_id, return raw response
-            if len(log_ids) == 1:
-                url = f"{base}/management/logs/{log_ids[0]}/event-sources"
-                result = client.get(url, solution="siem", subcommand="event-sources-list")
+            if has_filters:
+                items = _extract_items(result)
+                if state:
+                    s_upper = state.upper()
+                    items = [r for r in items if r.get("state", "").upper() == s_upper]
+                if es_name:
+                    n_lower = es_name.lower()
+                    items = [r for r in items if n_lower in r.get("name", "").lower()]
+                if issues_only:
+                    items = [r for r in items if r.get("issue") is not None]
+                click.echo(format_output(items, config.output_format, config.limit, config.search))
+            else:
                 click.echo(format_output(result, config.output_format, config.limit, config.search))
-                return
-
-            # Multiple log_ids — collect all results
-            all_results: list[dict] = []
-            for lid in log_ids:
-                url = f"{base}/management/logs/{lid}/event-sources"
-                result = client.get(url, solution="siem", subcommand="event-sources-list")
-                all_results.append({"log_id": lid, "response": result})
-
-            click.echo(format_output(all_results, config.output_format, config.limit, config.search))
         else:
             import time as _time
-            # For polling, use the first log_id
-            poll_lid = log_ids[0]
-            poll_url = f"{base}/management/logs/{poll_lid}/event-sources"
-            result = client.get(poll_url, solution="siem", subcommand="event-sources-list")
             seen_ids: set[str] = set()
             items = _extract_items(result)
             for item in items:
@@ -597,7 +610,7 @@ def event_sources_list(ctx, log_id, logset_name, auto_poll, interval):
             click.echo(f"Polling for new results every {interval}s (Ctrl+C to stop)...", err=True)
             while True:
                 _time.sleep(interval)
-                new_result = client.get(poll_url, solution="siem", subcommand="event-sources-list")
+                new_result = client.get(url, params=params, solution="siem", subcommand="event-sources-list")
                 new_items = _extract_items(new_result)
                 for item in new_items:
                     item_id = _extract_item_id(item)
@@ -983,11 +996,18 @@ def investigations_list(ctx, index, size, all_pages, auto_poll, interval, status
 
 
 @investigations.command("set-status")
-@click.argument("investigation_id")
-@click.argument("status", type=click.Choice(["OPEN", "INVESTIGATING", "CLOSED"], case_sensitive=True))
+@click.option("--id", "-j", "investigation_id", required=True, help="Investigation ID or RRN.")
+@click.option("--status", required=True, type=click.Choice(["OPEN", "INVESTIGATING", "CLOSED"], case_sensitive=True), help="New status.")
 @click.pass_context
 def investigations_set_status(ctx, investigation_id, status):
-    """Set the status of an investigation."""
+    """Set the status of an investigation.
+
+    \b
+    Examples:
+      r7-cli siem investigations set-status --id <INVESTIGATION_ID> --status OPEN
+      r7-cli siem investigations set-status -j <INVESTIGATION_ID> --status CLOSED
+      r7-cli siem investigations set-status --id <INVESTIGATION_ID> --status INVESTIGATING
+    """
     config = _get_config(ctx)
     client = R7Client(config)
     base = IDR_V1_BASE.format(region=config.region)
@@ -1295,49 +1315,74 @@ def comments(ctx):
 
 
 @comments.command("list")
-@click.option("--target", required=True, help="Target RRN (e.g. investigation RRN).")
 @click.option("--index", type=int, default=0, help="Page index (0-based).")
 @click.option("--size", type=int, default=20, help="Page size (default: 20).")
-@click.option("-a", "--auto", "auto_poll", is_flag=True, help="Poll for new entries and only print new ones.")
-@click.option("-i", "--interval", type=int, default=10, help="Polling interval in seconds (default: 10).")
 @click.pass_context
-def comments_list(ctx, target, index, size, auto_poll, interval):
-    """List comments for a target."""
+def comments_list(ctx, index, size):
+    """List investigations that have comments.
+
+    Fetches all investigations and checks each for comments,
+    returning only those with at least one comment.
+
+    \b
+    Examples:
+      r7-cli siem investigations comments list
+    """
     config = _get_config(ctx)
     client = R7Client(config)
     base = IDR_V1_BASE.format(region=config.region)
-    url = f"{base}/comments"
+    inv_url = f"{base}/investigations"
+    comments_url = f"{base}/comments"
 
     if config.verbose:
         click.echo(f"Docs: {_DOC_BASE}#operation/listComments", err=True)
 
-    params: dict = {"target": target, "index": index, "size": size}
-
     try:
-        result = client.get(url, params=params, solution="siem", subcommand="comments-list")
-
-        if not auto_poll:
-            click.echo(format_output(result, config.output_format, config.limit, config.search))
-        else:
-            import time as _time
-            seen_ids: set[str] = set()
+        # Fetch all investigations across pages
+        all_investigations: list[dict] = []
+        current_index = index
+        while True:
+            params = {"index": current_index, "size": size}
+            result = client.get(inv_url, params=params, solution="siem", subcommand="investigations-list")
             items = _extract_items(result)
-            for item in items:
-                item_id = _extract_item_id(item)
-                if item_id:
-                    seen_ids.add(item_id)
-            click.echo(f"Polling for new results every {interval}s (Ctrl+C to stop)...", err=True)
-            while True:
-                _time.sleep(interval)
-                new_result = client.get(url, params=params, solution="siem", subcommand="comments-list")
-                new_items = _extract_items(new_result)
-                for item in new_items:
-                    item_id = _extract_item_id(item)
-                    if item_id and item_id not in seen_ids:
-                        seen_ids.add(item_id)
-                        click.echo(format_output(item, config.output_format, config.limit, config.search))
-    except KeyboardInterrupt:
-        click.echo("\nStopped polling.", err=True)
+            all_investigations.extend(items)
+            metadata = result.get("metadata", {})
+            total_pages = metadata.get("total_pages", 1)
+            current_index += 1
+            if current_index >= total_pages:
+                break
+
+        if not all_investigations:
+            click.echo("No investigations found.", err=True)
+            return
+
+        # Check each investigation for comments
+        with_comments: list[dict] = []
+        for inv in all_investigations:
+            inv_rrn = inv.get("rrn", "")
+            if not inv_rrn:
+                continue
+            try:
+                cmt_result = client.get(
+                    comments_url,
+                    params={"target": inv_rrn, "index": 0, "size": 1},
+                    solution="siem",
+                    subcommand="comments-list",
+                )
+                cmt_data = cmt_result.get("data", [])
+                if isinstance(cmt_data, list) and len(cmt_data) > 0:
+                    with_comments.append(inv)
+                else:
+                    # Also check metadata total_data
+                    total = cmt_result.get("metadata", {}).get("total_data", 0)
+                    if total and int(total) > 0:
+                        with_comments.append(inv)
+            except R7Error:
+                # Skip investigations where comment lookup fails
+                continue
+
+        click.echo(format_output(with_comments, config.output_format, config.limit, config.search))
+
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -1377,8 +1422,9 @@ def comments_get(ctx, rrn):
     """Get a comment by RRN.
 
     \b
-    Example:
-      r7-cli siem comments get --id <COMMENT_RRN>
+    Examples:
+      r7-cli siem investigations comments get --id <COMMENT_RRN>
+      r7-cli siem investigations comments get -j <COMMENT_RRN>
     """
     config = _get_config(ctx)
     client = R7Client(config)
@@ -1404,8 +1450,9 @@ def comments_update(ctx, rrn, visibility):
     """Update a comment's visibility.
 
     \b
-    Example:
-      r7-cli siem comments update --id <COMMENT_RRN> --visibility public
+    Examples:
+      r7-cli siem investigations comments update --id <COMMENT_RRN> --visibility public
+      r7-cli siem investigations comments update -j <COMMENT_RRN> --visibility private
     """
     config = _get_config(ctx)
     client = R7Client(config)
@@ -1425,8 +1472,9 @@ def comments_delete(ctx, rrn):
     """Delete a comment.
 
     \b
-    Example:
-      r7-cli siem comments delete --id <COMMENT_RRN>
+    Examples:
+      r7-cli siem investigations comments delete --id <COMMENT_RRN>
+      r7-cli siem investigations comments delete -j <COMMENT_RRN>
     """
     config = _get_config(ctx)
     client = R7Client(config)
@@ -1451,59 +1499,88 @@ def attachments(ctx):
 
 
 @attachments.command("list")
-@click.option("--target", required=True, help="Target RRN (e.g. investigation RRN).")
 @click.option("--index", type=int, default=0, help="Page index (0-based).")
 @click.option("--size", type=int, default=20, help="Page size (default: 20).")
-@click.option("-a", "--auto", "auto_poll", is_flag=True, help="Poll for new entries and only print new ones.")
-@click.option("-i", "--interval", type=int, default=10, help="Polling interval in seconds (default: 10).")
 @click.pass_context
-def attachments_list(ctx, target, index, size, auto_poll, interval):
-    """List attachments for a target."""
+def attachments_list(ctx, index, size):
+    """List investigations that have attachments.
+
+    Fetches all investigations and checks each for attachments,
+    returning only those with at least one attachment.
+
+    \b
+    Examples:
+      r7-cli siem investigations attachments list
+    """
     config = _get_config(ctx)
     client = R7Client(config)
     base = IDR_V1_BASE.format(region=config.region)
-    url = f"{base}/attachments"
+    inv_url = f"{base}/investigations"
+    attachments_url = f"{base}/attachments"
 
     if config.verbose:
         click.echo(f"Docs: {_DOC_BASE}#operation/listAttachments", err=True)
 
-    params: dict = {"target": target, "index": index, "size": size}
-
     try:
-        result = client.get(url, params=params, solution="siem", subcommand="attachments-list")
-
-        if not auto_poll:
-            click.echo(format_output(result, config.output_format, config.limit, config.search))
-        else:
-            import time as _time
-            seen_ids: set[str] = set()
+        # Fetch all investigations across pages
+        all_investigations: list[dict] = []
+        current_index = index
+        while True:
+            params = {"index": current_index, "size": size}
+            result = client.get(inv_url, params=params, solution="siem", subcommand="investigations-list")
             items = _extract_items(result)
-            for item in items:
-                item_id = _extract_item_id(item)
-                if item_id:
-                    seen_ids.add(item_id)
-            click.echo(f"Polling for new results every {interval}s (Ctrl+C to stop)...", err=True)
-            while True:
-                _time.sleep(interval)
-                new_result = client.get(url, params=params, solution="siem", subcommand="attachments-list")
-                new_items = _extract_items(new_result)
-                for item in new_items:
-                    item_id = _extract_item_id(item)
-                    if item_id and item_id not in seen_ids:
-                        seen_ids.add(item_id)
-                        click.echo(format_output(item, config.output_format, config.limit, config.search))
-    except KeyboardInterrupt:
-        click.echo("\nStopped polling.", err=True)
+            all_investigations.extend(items)
+            metadata = result.get("metadata", {})
+            total_pages = metadata.get("total_pages", 1)
+            current_index += 1
+            if current_index >= total_pages:
+                break
+
+        if not all_investigations:
+            click.echo("No investigations found.", err=True)
+            return
+
+        # Check each investigation for attachments
+        with_attachments: list[dict] = []
+        for inv in all_investigations:
+            inv_rrn = inv.get("rrn", "")
+            if not inv_rrn:
+                continue
+            try:
+                att_result = client.get(
+                    attachments_url,
+                    params={"target": inv_rrn, "index": 0, "size": 1},
+                    solution="siem",
+                    subcommand="attachments-list",
+                )
+                att_data = att_result.get("data", [])
+                if isinstance(att_data, list) and len(att_data) > 0:
+                    with_attachments.append(inv)
+                else:
+                    total = att_result.get("metadata", {}).get("total_data", 0)
+                    if total and int(total) > 0:
+                        with_attachments.append(inv)
+            except R7Error:
+                continue
+
+        click.echo(format_output(with_attachments, config.output_format, config.limit, config.search))
+
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
 
 
 @attachments.command("get")
-@click.argument("rrn")
+@click.option("--id", "-j", "rrn", required=True, help="Attachment RRN.")
 @click.pass_context
 def attachments_get(ctx, rrn):
-    """Get attachment metadata by RRN."""
+    """Get attachment metadata by RRN.
+
+    \b
+    Examples:
+      r7-cli siem investigations attachments get --id <ATTACHMENT_RRN>
+      r7-cli siem investigations attachments get -j <ATTACHMENT_RRN>
+    """
     config = _get_config(ctx)
     client = R7Client(config)
     base = IDR_V1_BASE.format(region=config.region)
@@ -1521,14 +1598,15 @@ def attachments_get(ctx, rrn):
 
 
 @attachments.command("delete")
-@click.option("--rrn", required=True, help="Attachment RRN.")
+@click.option("--id", "-j", "rrn", required=True, help="Attachment RRN.")
 @click.pass_context
 def attachments_delete(ctx, rrn):
     """Delete an attachment.
 
     \b
-    Example:
-      r7-cli siem attachments delete --rrn <ATTACHMENT_RRN>
+    Examples:
+      r7-cli siem investigations attachments delete --id <ATTACHMENT_RRN>
+      r7-cli siem investigations attachments delete -j <ATTACHMENT_RRN>
     """
     config = _get_config(ctx)
     client = R7Client(config)
@@ -2211,9 +2289,20 @@ def log_mgmt(ctx):
 @log_mgmt.command("list")
 @click.option("-a", "--auto", "auto_poll", is_flag=True, help="Poll for new entries and only print new ones.")
 @click.option("-i", "--interval", type=int, default=10, help="Polling interval in seconds (default: 10).")
+@click.option("--name", "log_name", default=None, help="Filter by log name (substring match).")
+@click.option("--source-type", default=None, help="Filter by source_type (e.g. token, internal).")
+@click.option("--logset", "logset_name", default=None, help="Filter by logset name (substring match).")
 @click.pass_context
-def log_mgmt_list(ctx, auto_poll, interval):
-    """List all logs."""
+def log_mgmt_list(ctx, auto_poll, interval, log_name, source_type, logset_name):
+    """List all logs.
+
+    \b
+    Examples:
+      r7-cli siem logs mgmt list
+      r7-cli siem logs mgmt list --name 'Office 365'
+      r7-cli siem logs mgmt list --source-type internal
+      r7-cli siem logs mgmt list --logset 'Raw Log'
+    """
     config = _get_config(ctx)
     client = R7Client(config)
     base = IDR_LOGS_BASE.format(region=config.region)
@@ -2222,11 +2311,34 @@ def log_mgmt_list(ctx, auto_poll, interval):
     if config.verbose:
         click.echo(f"Docs: {_LOG_SEARCH_DOC}", err=True)
 
+    has_filters = any([log_name, source_type, logset_name])
+
+    def _apply_log_filters(items):
+        filtered = items
+        if log_name:
+            n_lower = log_name.lower()
+            filtered = [lg for lg in filtered if n_lower in lg.get("name", "").lower()]
+        if source_type:
+            st_lower = source_type.lower()
+            filtered = [lg for lg in filtered if lg.get("source_type", "").lower() == st_lower]
+        if logset_name:
+            ls_lower = logset_name.lower()
+            filtered = [
+                lg for lg in filtered
+                if any(ls_lower in ls.get("name", "").lower() for ls in lg.get("logsets_info", []))
+            ]
+        return filtered
+
     try:
         result = client.get(url, solution="siem", subcommand="log-mgmt-list")
 
         if not auto_poll:
-            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            if has_filters:
+                items = _extract_items(result)
+                items = _apply_log_filters(items)
+                click.echo(format_output(items, config.output_format, config.limit, config.search))
+            else:
+                click.echo(format_output(result, config.output_format, config.limit, config.search))
         else:
             import time as _time
             seen_ids: set[str] = set()
