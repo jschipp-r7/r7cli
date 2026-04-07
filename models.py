@@ -23,7 +23,7 @@ STUB_SOLUTIONS: frozenset[str] = frozenset()
 # ---------------------------------------------------------------------------
 # Output / search
 # ---------------------------------------------------------------------------
-VALID_OUTPUT_FORMATS: frozenset[str] = frozenset({"json", "table", "csv"})
+VALID_OUTPUT_FORMATS: frozenset[str] = frozenset({"json", "table", "csv", "tsv", "sql"})
 VALID_SEARCH_TYPES: frozenset[str] = frozenset({
     "VULNERABILITY", "ASSET", "SCAN", "SCHEDULE", "APP",
 })
@@ -76,6 +76,31 @@ GQL_QUARANTINE_STATE = """
 query QuarantineState($cursor: String) {
   organization {
     assets(first: 10000, after: $cursor) {
+      pageInfo { endCursor hasNextPage }
+      edges {
+        node {
+          agent {
+            id agentStatus
+            quarantineState { currentState }
+            beaconTime agentLastUpdateTime
+          }
+          host {
+            hostNames { name }
+            primaryAddress { ip mac }
+            alternateAddresses { ip mac }
+          }
+        }
+        cursor
+      }
+    }
+  }
+}
+"""
+
+GQL_AGENTS_LIST = """
+query AgentsList($orgId: String!, $first: Int!, $cursor: String) {
+  organization(id: $orgId) {
+    assets(first: $first, after: $cursor) {
       pageInfo { endCursor hasNextPage }
       edges {
         node {

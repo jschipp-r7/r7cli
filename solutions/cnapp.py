@@ -134,7 +134,7 @@ def iac_scans_list(ctx, page, page_size, sort, sort_dir, auto_poll, interval):
         result = client.get(url, params=params, solution="cnapp", subcommand="iac-scans-list")
 
         if not auto_poll:
-            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
         else:
             import time as _time
             seen_ids: set[str] = set()
@@ -152,7 +152,7 @@ def iac_scans_list(ctx, page, page_size, sort, sort_dir, auto_poll, interval):
                     item_id = _extract_item_id(item)
                     if item_id and item_id not in seen_ids:
                         seen_ids.add(item_id)
-                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+                        click.echo(format_output(item, config.output_format, config.limit, config.search, short=config.short))
     except KeyboardInterrupt:
         click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
@@ -180,7 +180,7 @@ def iac_scans_get(ctx, scan_id):
 
     try:
         result = client.get(url, solution="cnapp", subcommand="iac-scans-get")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -206,7 +206,7 @@ def iac_scans_report(ctx, scan_id):
 
     try:
         result = client.get(url, solution="cnapp", subcommand="iac-scans-report")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -259,7 +259,7 @@ def aws_keys_list(ctx, page, page_size, include_session, auto_poll, interval):
         result = client.get(url, params=params or None, solution="cnapp", subcommand="aws-keys-list")
 
         if not auto_poll:
-            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
         else:
             import time as _time
             seen_ids: set[str] = set()
@@ -277,7 +277,7 @@ def aws_keys_list(ctx, page, page_size, include_session, auto_poll, interval):
                     item_id = _extract_item_id(item)
                     if item_id and item_id not in seen_ids:
                         seen_ids.add(item_id)
-                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+                        click.echo(format_output(item, config.output_format, config.limit, config.search, short=config.short))
     except KeyboardInterrupt:
         click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
@@ -310,7 +310,7 @@ def aws_keys_create(ctx, data_str, data_file):
 
     try:
         result = client.post(url, json=body, solution="cnapp", subcommand="aws-keys-create")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -336,7 +336,7 @@ def aws_keys_delete(ctx, key_id):
 
     try:
         result = client.request("DELETE", url, solution="cnapp", subcommand="aws-keys-delete")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -385,7 +385,7 @@ def aws_roles_list(ctx, page, page_size, auto_poll, interval):
         result = client.get(url, params=params or None, solution="cnapp", subcommand="aws-roles-list")
 
         if not auto_poll:
-            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
         else:
             import time as _time
             seen_ids: set[str] = set()
@@ -403,7 +403,7 @@ def aws_roles_list(ctx, page, page_size, auto_poll, interval):
                     item_id = _extract_item_id(item)
                     if item_id and item_id not in seen_ids:
                         seen_ids.add(item_id)
-                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+                        click.echo(format_output(item, config.output_format, config.limit, config.search, short=config.short))
     except KeyboardInterrupt:
         click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
@@ -436,7 +436,7 @@ def aws_roles_create(ctx, data_str, data_file):
 
     try:
         result = client.post(url, json=body, solution="cnapp", subcommand="aws-roles-create")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -468,7 +468,7 @@ def aws_roles_update(ctx, role_id, data_str, data_file):
 
     try:
         result = client.post(url, json=body, solution="cnapp", subcommand="aws-roles-update")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -494,7 +494,7 @@ def aws_roles_delete(ctx, role_id):
 
     try:
         result = client.request("DELETE", url, solution="cnapp", subcommand="aws-roles-delete")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -531,7 +531,7 @@ def aws_accounts_get(ctx, org_service_id):
 
     try:
         result = client.get(url, solution="cnapp", subcommand="aws-accounts-get")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -563,7 +563,7 @@ def aws_accounts_update(ctx, org_service_id, data_str, data_file):
 
     try:
         result = client.post(url, json=body, solution="cnapp", subcommand="aws-accounts-update")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -610,7 +610,7 @@ def findings_list(ctx, org_service_id, cursor, auto_poll, interval):
         result = client.get(url, params=params or None, solution="cnapp", subcommand="findings-list")
 
         if not auto_poll:
-            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
         else:
             import time as _time
             seen_ids: set[str] = set()
@@ -628,7 +628,7 @@ def findings_list(ctx, org_service_id, cursor, auto_poll, interval):
                     item_id = _extract_item_id(item)
                     if item_id and item_id not in seen_ids:
                         seen_ids.add(item_id)
-                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+                        click.echo(format_output(item, config.output_format, config.limit, config.search, short=config.short))
     except KeyboardInterrupt:
         click.echo("\nStopped polling.", err=True)
     except R7Error as exc:

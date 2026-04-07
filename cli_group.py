@@ -17,6 +17,7 @@ GLOBAL_VALUE_FLAGS = {
 GLOBAL_BOOLEAN_FLAGS = {
     "-v", "--verbose",
     "-c", "--cache",
+    "-s", "--short",
     "--debug",
 }
 

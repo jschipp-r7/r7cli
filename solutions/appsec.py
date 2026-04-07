@@ -484,13 +484,13 @@ def apps_list(ctx, index, size, auto_poll, interval, all_pages):
     try:
         if all_pages:
             all_items = _fetch_all_pages(client, config, url, params, "appsec", "apps-list")
-            click.echo(format_output(all_items, config.output_format, config.limit, config.search))
+            click.echo(format_output(all_items, config.output_format, config.limit, config.search, short=config.short))
             return
 
         result = client.get(url, params=params, solution="appsec", subcommand="apps-list")
 
         if not auto_poll:
-            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
         else:
             import time as _time
             seen_ids: set[str] = set()
@@ -508,7 +508,7 @@ def apps_list(ctx, index, size, auto_poll, interval, all_pages):
                     item_id = _extract_item_id(item)
                     if item_id and item_id not in seen_ids:
                         seen_ids.add(item_id)
-                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+                        click.echo(format_output(item, config.output_format, config.limit, config.search, short=config.short))
     except KeyboardInterrupt:
         click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
@@ -537,7 +537,7 @@ def apps_get(ctx, item_id, auto_select):
 
     try:
         result = client.get(url, solution="appsec", subcommand="apps-get")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -568,7 +568,7 @@ def apps_create(ctx, data_str, data_file):
 
     try:
         result = client.post(url, json=body, solution="appsec", subcommand="apps-create")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -595,7 +595,7 @@ def apps_delete(ctx, item_id, auto_select):
 
     try:
         result = client.request("DELETE", url, solution="appsec", subcommand="apps-delete")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -629,7 +629,7 @@ def apps_update(ctx, item_id, auto_select, data_str, data_file):
 
     try:
         result = client.request("PUT", url, json=body, solution="appsec", subcommand="apps-update")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -718,13 +718,13 @@ def scans_list(ctx, index, size, auto_poll, interval, all_pages, app_name, filte
             all_items = _fetch_all_pages(client, config, url, params, "appsec", "scans-list")
             if has_filters:
                 all_items = _filter_scans(all_items, app_id=resolved_app_id, config_id=resolved_config_id, status=status, completion_date=completion_date)
-            click.echo(format_output(all_items, config.output_format, config.limit, config.search))
+            click.echo(format_output(all_items, config.output_format, config.limit, config.search, short=config.short))
             return
 
         result = client.get(url, params=params, solution="appsec", subcommand="scans-list")
 
         if not auto_poll:
-            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
         else:
             import time as _time
             seen_ids: set[str] = set()
@@ -742,7 +742,7 @@ def scans_list(ctx, index, size, auto_poll, interval, all_pages, app_name, filte
                     item_id = _extract_item_id(item)
                     if item_id and item_id not in seen_ids:
                         seen_ids.add(item_id)
-                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+                        click.echo(format_output(item, config.output_format, config.limit, config.search, short=config.short))
     except KeyboardInterrupt:
         click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
@@ -771,7 +771,7 @@ def scans_get(ctx, item_id, auto_select):
 
     try:
         result = client.get(url, solution="appsec", subcommand="scans-get")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -804,7 +804,7 @@ def scans_submit(ctx, data_str, data_file):
 
     try:
         result = client.post(url, json=body, solution="appsec", subcommand="scans-submit")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -833,7 +833,7 @@ def scans_action(ctx, item_id, auto_select, action_type):
     try:
         result = client.request("PUT", url, json={"action": action_type.upper()},
                                 solution="appsec", subcommand="scans-action")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -860,7 +860,7 @@ def scans_details(ctx, item_id, auto_select):
 
     try:
         result = client.get(url, solution="appsec", subcommand="scans-details")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -887,7 +887,7 @@ def scans_delete(ctx, item_id, auto_select):
 
     try:
         result = client.request("DELETE", url, solution="appsec", subcommand="scans-delete")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -914,7 +914,7 @@ def scans_engine_events(ctx, item_id, auto_select):
 
     try:
         result = client.get(url, solution="appsec", subcommand="scans-engine-events")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -941,7 +941,7 @@ def scans_platform_events(ctx, item_id, auto_select):
 
     try:
         result = client.get(url, solution="appsec", subcommand="scans-platform-events")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -979,13 +979,13 @@ def scan_configs_list(ctx, index, size, auto_poll, interval, all_pages):
     try:
         if all_pages:
             all_items = _fetch_all_pages(client, config, url, params, "appsec", "scan-configs-list")
-            click.echo(format_output(all_items, config.output_format, config.limit, config.search))
+            click.echo(format_output(all_items, config.output_format, config.limit, config.search, short=config.short))
             return
 
         result = client.get(url, params=params, solution="appsec", subcommand="scan-configs-list")
 
         if not auto_poll:
-            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
         else:
             import time as _time
             seen_ids: set[str] = set()
@@ -1003,7 +1003,7 @@ def scan_configs_list(ctx, index, size, auto_poll, interval, all_pages):
                     item_id = _extract_item_id(item)
                     if item_id and item_id not in seen_ids:
                         seen_ids.add(item_id)
-                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+                        click.echo(format_output(item, config.output_format, config.limit, config.search, short=config.short))
     except KeyboardInterrupt:
         click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
@@ -1032,7 +1032,7 @@ def scan_configs_get(ctx, item_id, auto_select):
 
     try:
         result = client.get(url, solution="appsec", subcommand="scan-configs-get")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -1068,7 +1068,7 @@ def scan_configs_create(ctx, data_str, data_file):
 
     try:
         result = client.post(url, json=body, solution="appsec", subcommand="scan-configs-create")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -1095,7 +1095,7 @@ def scan_configs_options(ctx, item_id, auto_select):
 
     try:
         result = client.get(url, solution="appsec", subcommand="scan-configs-options")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -1129,7 +1129,7 @@ def scan_configs_update(ctx, item_id, auto_select, data_str, data_file):
 
     try:
         result = client.request("PUT", url, json=body, solution="appsec", subcommand="scan-configs-update")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -1156,7 +1156,7 @@ def scan_configs_delete(ctx, item_id, auto_select):
 
     try:
         result = client.request("DELETE", url, solution="appsec", subcommand="scan-configs-delete")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -1316,7 +1316,7 @@ def vulns_list(ctx, index, size, auto_poll, interval, all_pages, app_name, filte
             has_extra = any([resolved_app_id, severity, last_discovered, first_discovered, newly_discovered, score])
             if has_extra:
                 all_items = _filter_vulns(all_items, app_id=resolved_app_id, severity=severity, last_discovered=last_discovered, first_discovered=first_discovered, newly_discovered=newly_discovered, score=score)
-            click.echo(format_output(all_items, config.output_format, config.limit, config.search))
+            click.echo(format_output(all_items, config.output_format, config.limit, config.search, short=config.short))
         except R7Error as exc:
             click.echo(str(exc), err=True)
             sys.exit(exc.exit_code)
@@ -1341,13 +1341,13 @@ def vulns_list(ctx, index, size, auto_poll, interval, all_pages, app_name, filte
             all_items = _fetch_all_pages(client, config, url, params, "appsec", "vulns-list")
             if has_filters:
                 all_items = _filter_vulns(all_items, app_id=resolved_app_id, severity=severity, status=status, last_discovered=last_discovered, first_discovered=first_discovered, newly_discovered=newly_discovered, score=score)
-            click.echo(format_output(all_items, config.output_format, config.limit, config.search))
+            click.echo(format_output(all_items, config.output_format, config.limit, config.search, short=config.short))
             return
 
         result = client.get(url, params=params, solution="appsec", subcommand="vulns-list")
 
         if not auto_poll:
-            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
         else:
             import time as _time
             seen_ids: set[str] = set()
@@ -1365,7 +1365,7 @@ def vulns_list(ctx, index, size, auto_poll, interval, all_pages, app_name, filte
                     item_id = _extract_item_id(item)
                     if item_id and item_id not in seen_ids:
                         seen_ids.add(item_id)
-                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+                        click.echo(format_output(item, config.output_format, config.limit, config.search, short=config.short))
     except KeyboardInterrupt:
         click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
@@ -1394,7 +1394,7 @@ def vulns_get(ctx, item_id, auto_select):
 
     try:
         result = client.get(url, solution="appsec", subcommand="vulns-get")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -1421,7 +1421,7 @@ def vulns_discoveries(ctx, item_id, auto_select):
 
     try:
         result = client.get(url, solution="appsec", subcommand="vulns-discoveries")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -1448,7 +1448,7 @@ def vulns_history(ctx, item_id, auto_select):
 
     try:
         result = client.get(url, solution="appsec", subcommand="vulns-history")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -1482,7 +1482,7 @@ def vulns_update(ctx, item_id, auto_select, data_str, data_file):
 
     try:
         result = client.request("PUT", url, json=body, solution="appsec", subcommand="vulns-update")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -1533,7 +1533,7 @@ def vuln_comments_list(ctx, vuln_id, auto_select):
                 update_id = update_obj.get("id", "") if isinstance(update_obj, dict) else ""
                 if update_id:
                     comment["last_update_author_name"] = _resolve_user_name(client, config, update_id)
-            click.echo(format_output(comments if comments else result, config.output_format, config.limit, config.search))
+            click.echo(format_output(comments if comments else result, config.output_format, config.limit, config.search, short=config.short))
         except R7Error as exc:
             click.echo(str(exc), err=True)
             sys.exit(exc.exit_code)
@@ -1571,7 +1571,7 @@ def vuln_comments_list(ctx, vuln_id, auto_select):
                 })
         except R7Error:
             continue
-    click.echo(format_output(all_commented, config.output_format, config.limit, config.search))
+    click.echo(format_output(all_commented, config.output_format, config.limit, config.search, short=config.short))
 
 
 @vuln_comments.command("create")
@@ -1612,7 +1612,7 @@ def vuln_comments_create(ctx, vuln_id, auto_select, data_str, data_file):
 
     try:
         result = client.post(url, json=body, solution="appsec", subcommand="vulns-comments-create")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -1655,7 +1655,7 @@ def vuln_comments_update(ctx, vuln_id, comment_id, data_str, data_file):
 
     try:
         result = client.request("PUT", url, json=body, solution="appsec", subcommand="vulns-comments-update")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -1680,7 +1680,7 @@ def vuln_comments_delete(ctx, vuln_id, comment_id):
 
     try:
         result = client.request("DELETE", url, solution="appsec", subcommand="vulns-comments-delete")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -1718,13 +1718,13 @@ def engines_list(ctx, index, size, auto_poll, interval, all_pages):
     try:
         if all_pages:
             all_items = _fetch_all_pages(client, config, url, params, "appsec", "engines-list")
-            click.echo(format_output(all_items, config.output_format, config.limit, config.search))
+            click.echo(format_output(all_items, config.output_format, config.limit, config.search, short=config.short))
             return
 
         result = client.get(url, params=params, solution="appsec", subcommand="engines-list")
 
         if not auto_poll:
-            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
         else:
             import time as _time
             seen_ids: set[str] = set()
@@ -1742,7 +1742,7 @@ def engines_list(ctx, index, size, auto_poll, interval, all_pages):
                     item_id = _extract_item_id(item)
                     if item_id and item_id not in seen_ids:
                         seen_ids.add(item_id)
-                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+                        click.echo(format_output(item, config.output_format, config.limit, config.search, short=config.short))
     except KeyboardInterrupt:
         click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
@@ -1771,7 +1771,7 @@ def engines_get(ctx, item_id, auto_select):
 
     try:
         result = client.get(url, solution="appsec", subcommand="engines-get")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -1792,7 +1792,7 @@ def engines_create(ctx, data_str, data_file):
     url = IAS_V1_BASE.format(region=config.region) + "/engines"
     try:
         result = client.post(url, json=body, solution="appsec", subcommand="engines-create")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -1819,7 +1819,7 @@ def engines_update(ctx, item_id, auto_select, data_str, data_file):
     url = IAS_V1_BASE.format(region=config.region) + f"/engines/{item_id}"
     try:
         result = client.request("PUT", url, json=body, solution="appsec", subcommand="engines-update")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -1840,7 +1840,7 @@ def engines_delete(ctx, item_id, auto_select):
     url = IAS_V1_BASE.format(region=config.region) + f"/engines/{item_id}"
     try:
         result = client.request("DELETE", url, solution="appsec", subcommand="engines-delete")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -1878,13 +1878,13 @@ def engine_groups_list(ctx, index, size, auto_poll, interval, all_pages):
     try:
         if all_pages:
             all_items = _fetch_all_pages(client, config, url, params, "appsec", "engine-groups-list")
-            click.echo(format_output(all_items, config.output_format, config.limit, config.search))
+            click.echo(format_output(all_items, config.output_format, config.limit, config.search, short=config.short))
             return
 
         result = client.get(url, params=params, solution="appsec", subcommand="engine-groups-list")
 
         if not auto_poll:
-            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
         else:
             import time as _time
             seen_ids: set[str] = set()
@@ -1902,7 +1902,7 @@ def engine_groups_list(ctx, index, size, auto_poll, interval, all_pages):
                     item_id = _extract_item_id(item)
                     if item_id and item_id not in seen_ids:
                         seen_ids.add(item_id)
-                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+                        click.echo(format_output(item, config.output_format, config.limit, config.search, short=config.short))
     except KeyboardInterrupt:
         click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
@@ -1931,7 +1931,7 @@ def engine_groups_get(ctx, item_id, auto_select):
 
     try:
         result = client.get(url, solution="appsec", subcommand="engine-groups-get")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -1952,7 +1952,7 @@ def engine_groups_create(ctx, data_str, data_file):
     url = IAS_V1_BASE.format(region=config.region) + "/engine-groups"
     try:
         result = client.post(url, json=body, solution="appsec", subcommand="engine-groups-create")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -1979,7 +1979,7 @@ def engine_groups_update(ctx, item_id, auto_select, data_str, data_file):
     url = IAS_V1_BASE.format(region=config.region) + f"/engine-groups/{item_id}"
     try:
         result = client.request("PUT", url, json=body, solution="appsec", subcommand="engine-groups-update")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -2000,7 +2000,7 @@ def engine_groups_delete(ctx, item_id, auto_select):
     url = IAS_V1_BASE.format(region=config.region) + f"/engine-groups/{item_id}"
     try:
         result = client.request("DELETE", url, solution="appsec", subcommand="engine-groups-delete")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -2021,7 +2021,7 @@ def engine_groups_engines(ctx, item_id, auto_select):
     url = IAS_V1_BASE.format(region=config.region) + f"/engine-groups/{item_id}/engines"
     try:
         result = client.get(url, solution="appsec", subcommand="engine-groups-engines")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -2059,13 +2059,13 @@ def schedules_list(ctx, index, size, auto_poll, interval, all_pages):
     try:
         if all_pages:
             all_items = _fetch_all_pages(client, config, url, params, "appsec", "schedules-list")
-            click.echo(format_output(all_items, config.output_format, config.limit, config.search))
+            click.echo(format_output(all_items, config.output_format, config.limit, config.search, short=config.short))
             return
 
         result = client.get(url, params=params, solution="appsec", subcommand="schedules-list")
 
         if not auto_poll:
-            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
         else:
             import time as _time
             seen_ids: set[str] = set()
@@ -2083,7 +2083,7 @@ def schedules_list(ctx, index, size, auto_poll, interval, all_pages):
                     item_id = _extract_item_id(item)
                     if item_id and item_id not in seen_ids:
                         seen_ids.add(item_id)
-                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+                        click.echo(format_output(item, config.output_format, config.limit, config.search, short=config.short))
     except KeyboardInterrupt:
         click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
@@ -2112,7 +2112,7 @@ def schedules_get(ctx, item_id, auto_select):
 
     try:
         result = client.get(url, solution="appsec", subcommand="schedules-get")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -2146,7 +2146,7 @@ def schedules_create(ctx, data_str, data_file):
 
     try:
         result = client.post(url, json=body, solution="appsec", subcommand="schedules-create")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -2173,7 +2173,7 @@ def schedules_update(ctx, item_id, auto_select, data_str, data_file):
     url = IAS_V1_BASE.format(region=config.region) + f"/schedules/{item_id}"
     try:
         result = client.request("PUT", url, json=body, solution="appsec", subcommand="schedules-update")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -2194,7 +2194,7 @@ def schedules_delete(ctx, item_id, auto_select):
     url = IAS_V1_BASE.format(region=config.region) + f"/schedules/{item_id}"
     try:
         result = client.request("DELETE", url, solution="appsec", subcommand="schedules-delete")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -2232,13 +2232,13 @@ def blackouts_list(ctx, index, size, auto_poll, interval, all_pages):
     try:
         if all_pages:
             all_items = _fetch_all_pages(client, config, url, params, "appsec", "blackouts-list")
-            click.echo(format_output(all_items, config.output_format, config.limit, config.search))
+            click.echo(format_output(all_items, config.output_format, config.limit, config.search, short=config.short))
             return
 
         result = client.get(url, params=params, solution="appsec", subcommand="blackouts-list")
 
         if not auto_poll:
-            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
         else:
             import time as _time
             seen_ids: set[str] = set()
@@ -2256,7 +2256,7 @@ def blackouts_list(ctx, index, size, auto_poll, interval, all_pages):
                     item_id = _extract_item_id(item)
                     if item_id and item_id not in seen_ids:
                         seen_ids.add(item_id)
-                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+                        click.echo(format_output(item, config.output_format, config.limit, config.search, short=config.short))
     except KeyboardInterrupt:
         click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
@@ -2285,7 +2285,7 @@ def blackouts_get(ctx, item_id, auto_select):
 
     try:
         result = client.get(url, solution="appsec", subcommand="blackouts-get")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -2306,7 +2306,7 @@ def blackouts_create(ctx, data_str, data_file):
     url = IAS_V1_BASE.format(region=config.region) + "/blackouts"
     try:
         result = client.post(url, json=body, solution="appsec", subcommand="blackouts-create")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -2333,7 +2333,7 @@ def blackouts_update(ctx, item_id, auto_select, data_str, data_file):
     url = IAS_V1_BASE.format(region=config.region) + f"/blackouts/{item_id}"
     try:
         result = client.request("PUT", url, json=body, solution="appsec", subcommand="blackouts-update")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -2354,7 +2354,7 @@ def blackouts_delete(ctx, item_id, auto_select):
     url = IAS_V1_BASE.format(region=config.region) + f"/blackouts/{item_id}"
     try:
         result = client.request("DELETE", url, solution="appsec", subcommand="blackouts-delete")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -2392,13 +2392,13 @@ def attack_templates_list(ctx, index, size, auto_poll, interval, all_pages):
     try:
         if all_pages:
             all_items = _fetch_all_pages(client, config, url, params, "appsec", "attack-templates-list")
-            click.echo(format_output(all_items, config.output_format, config.limit, config.search))
+            click.echo(format_output(all_items, config.output_format, config.limit, config.search, short=config.short))
             return
 
         result = client.get(url, params=params, solution="appsec", subcommand="attack-templates-list")
 
         if not auto_poll:
-            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
         else:
             import time as _time
             seen_ids: set[str] = set()
@@ -2416,7 +2416,7 @@ def attack_templates_list(ctx, index, size, auto_poll, interval, all_pages):
                     item_id = _extract_item_id(item)
                     if item_id and item_id not in seen_ids:
                         seen_ids.add(item_id)
-                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+                        click.echo(format_output(item, config.output_format, config.limit, config.search, short=config.short))
     except KeyboardInterrupt:
         click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
@@ -2445,7 +2445,7 @@ def attack_templates_get(ctx, item_id, auto_select):
 
     try:
         result = client.get(url, solution="appsec", subcommand="attack-templates-get")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -2466,7 +2466,7 @@ def attack_templates_create(ctx, data_str, data_file):
     url = IAS_V1_BASE.format(region=config.region) + "/attack-templates"
     try:
         result = client.post(url, json=body, solution="appsec", subcommand="attack-templates-create")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -2493,7 +2493,7 @@ def attack_templates_update(ctx, item_id, auto_select, data_str, data_file):
     url = IAS_V1_BASE.format(region=config.region) + f"/attack-templates/{item_id}"
     try:
         result = client.request("PUT", url, json=body, solution="appsec", subcommand="attack-templates-update")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -2514,7 +2514,7 @@ def attack_templates_delete(ctx, item_id, auto_select):
     url = IAS_V1_BASE.format(region=config.region) + f"/attack-templates/{item_id}"
     try:
         result = client.request("DELETE", url, solution="appsec", subcommand="attack-templates-delete")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -2552,13 +2552,13 @@ def targets_list(ctx, index, size, auto_poll, interval, all_pages):
     try:
         if all_pages:
             all_items = _fetch_all_pages(client, config, url, params, "appsec", "targets-list")
-            click.echo(format_output(all_items, config.output_format, config.limit, config.search))
+            click.echo(format_output(all_items, config.output_format, config.limit, config.search, short=config.short))
             return
 
         result = client.get(url, params=params, solution="appsec", subcommand="targets-list")
 
         if not auto_poll:
-            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
         else:
             import time as _time
             seen_ids: set[str] = set()
@@ -2576,7 +2576,7 @@ def targets_list(ctx, index, size, auto_poll, interval, all_pages):
                     item_id = _extract_item_id(item)
                     if item_id and item_id not in seen_ids:
                         seen_ids.add(item_id)
-                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+                        click.echo(format_output(item, config.output_format, config.limit, config.search, short=config.short))
     except KeyboardInterrupt:
         click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
@@ -2605,7 +2605,7 @@ def targets_get(ctx, item_id, auto_select):
 
     try:
         result = client.get(url, solution="appsec", subcommand="targets-get")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -2641,7 +2641,7 @@ def targets_create(ctx, data_str, data_file):
 
     try:
         result = client.post(url, json=body, solution="appsec", subcommand="targets-create")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -2685,7 +2685,7 @@ def targets_update(ctx, item_id, auto_select, data_str, data_file):
 
     try:
         result = client.request("PUT", url, json=body, solution="appsec", subcommand="targets-update")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -2712,7 +2712,7 @@ def targets_delete(ctx, item_id, auto_select):
 
     try:
         result = client.request("DELETE", url, solution="appsec", subcommand="targets-delete")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -2750,13 +2750,13 @@ def modules_list(ctx, index, size, auto_poll, interval, all_pages):
     try:
         if all_pages:
             all_items = _fetch_all_pages(client, config, url, params, "appsec", "modules-list")
-            click.echo(format_output(all_items, config.output_format, config.limit, config.search))
+            click.echo(format_output(all_items, config.output_format, config.limit, config.search, short=config.short))
             return
 
         result = client.get(url, params=params, solution="appsec", subcommand="modules-list")
 
         if not auto_poll:
-            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
         else:
             import time as _time
             seen_ids: set[str] = set()
@@ -2774,7 +2774,7 @@ def modules_list(ctx, index, size, auto_poll, interval, all_pages):
                     item_id = _extract_item_id(item)
                     if item_id and item_id not in seen_ids:
                         seen_ids.add(item_id)
-                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+                        click.echo(format_output(item, config.output_format, config.limit, config.search, short=config.short))
     except KeyboardInterrupt:
         click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
@@ -2803,7 +2803,7 @@ def modules_get(ctx, item_id, auto_select):
 
     try:
         result = client.get(url, solution="appsec", subcommand="modules-get")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -2910,13 +2910,13 @@ def reports_list(ctx, index, size, auto_poll, interval, all_pages, report_type, 
             all_items = _fetch_all_pages(client, config, url, params, "appsec", "reports-list")
             if has_filters:
                 all_items = _filter_reports(all_items, report_type=report_type, report_format=report_format, status=status, report_name=report_name, generated_date=generated_date, app_id=resolved_app_id)
-            click.echo(format_output(all_items, config.output_format, config.limit, config.search))
+            click.echo(format_output(all_items, config.output_format, config.limit, config.search, short=config.short))
             return
 
         result = client.get(url, params=params, solution="appsec", subcommand="reports-list")
 
         if not auto_poll:
-            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
         else:
             import time as _time
             seen_ids: set[str] = set()
@@ -2934,7 +2934,7 @@ def reports_list(ctx, index, size, auto_poll, interval, all_pages, report_type, 
                     item_id = _extract_item_id(item)
                     if item_id and item_id not in seen_ids:
                         seen_ids.add(item_id)
-                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+                        click.echo(format_output(item, config.output_format, config.limit, config.search, short=config.short))
     except KeyboardInterrupt:
         click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
@@ -2963,7 +2963,7 @@ def reports_get(ctx, item_id, auto_select):
 
     try:
         result = client.get(url, solution="appsec", subcommand="reports-get")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -2996,7 +2996,7 @@ def reports_generate(ctx, data_str, data_file):
 
     try:
         result = client.post(url, json=body, solution="appsec", subcommand="reports-generate")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -3017,7 +3017,7 @@ def reports_delete(ctx, item_id, auto_select):
     url = IAS_V1_BASE.format(region=config.region) + f"/reports/{item_id}"
     try:
         result = client.request("DELETE", url, solution="appsec", subcommand="reports-delete")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -3171,13 +3171,13 @@ def tags_list(ctx, index, size, auto_poll, interval, all_pages):
     try:
         if all_pages:
             all_items = _fetch_all_pages(client, config, url, params, "appsec", "tags-list")
-            click.echo(format_output(all_items, config.output_format, config.limit, config.search))
+            click.echo(format_output(all_items, config.output_format, config.limit, config.search, short=config.short))
             return
 
         result = client.get(url, params=params, solution="appsec", subcommand="tags-list")
 
         if not auto_poll:
-            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
         else:
             import time as _time
             seen_ids: set[str] = set()
@@ -3195,7 +3195,7 @@ def tags_list(ctx, index, size, auto_poll, interval, all_pages):
                     item_id = _extract_item_id(item)
                     if item_id and item_id not in seen_ids:
                         seen_ids.add(item_id)
-                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+                        click.echo(format_output(item, config.output_format, config.limit, config.search, short=config.short))
     except KeyboardInterrupt:
         click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
@@ -3224,7 +3224,7 @@ def tags_get(ctx, item_id, auto_select):
 
     try:
         result = client.get(url, solution="appsec", subcommand="tags-get")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -3262,7 +3262,7 @@ def tags_create(ctx, data_str, data_file):
 
     try:
         result = client.post(url, json=body, solution="appsec", subcommand="tags-create")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -3306,7 +3306,7 @@ def tags_update(ctx, item_id, auto_select, data_str, data_file):
 
     try:
         result = client.request("PUT", url, json=body, solution="appsec", subcommand="tags-update")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -3333,7 +3333,7 @@ def tags_delete(ctx, item_id, auto_select):
 
     try:
         result = client.request("DELETE", url, solution="appsec", subcommand="tags-delete")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -3432,7 +3432,7 @@ def appsec_search(ctx, search_type, query, index, size):
 
     try:
         result = client.post(url, json=body, params=params, solution="appsec", subcommand="search")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)

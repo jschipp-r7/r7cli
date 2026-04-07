@@ -7,9 +7,86 @@ from __future__ import annotations
 import csv
 import io
 import json
+import re
+import shutil
 from typing import Any
 
 from tabulate import tabulate
+
+
+# ---------------------------------------------------------------------------
+# Short-mode priority constants
+# ---------------------------------------------------------------------------
+
+HIGH_PRIORITY_FIELDS: frozenset[str] = frozenset({
+    "name", "title", "status", "type", "severity", "value",
+    "description", "hostName", "ip", "domain", "hostname", "mac",
+    "product_code", "organization_name", "riskScore", "risk_score",
+    "cvss", "cvssScore", "cvss_score",
+})
+
+LOW_PRIORITY_SUBSTRINGS: tuple[str, ...] = ("id", "uuid", "token", "url", "hash", "base64")
+
+MEDIUM_PRIORITY_SUBSTRINGS: tuple[str, ...] = ("date", "time", "timestamp", "count", "version", "created")
+
+UUID_PATTERN: re.Pattern = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE
+)
+
+
+def _classify_field(key: str, value: Any) -> int:
+    """Return priority tier for a field: 0=high, 1=medium, 2=low, 3=default.
+
+    Precedence: high > low > medium > default.
+    """
+    if key in HIGH_PRIORITY_FIELDS:
+        return 0
+    key_lower = key.lower()
+    if any(sub in key_lower for sub in LOW_PRIORITY_SUBSTRINGS) or (
+        isinstance(value, str) and UUID_PATTERN.match(value)
+    ):
+        return 2
+    if any(sub in key_lower for sub in MEDIUM_PRIORITY_SUBSTRINGS) or isinstance(value, bool):
+        return 1
+    return 3
+
+
+def _reorder_fields(obj: dict) -> dict:
+    """Reorder dict keys by priority tier: 0 → 1 → 3 → 2.
+
+    Preserves original insertion order within each tier.
+    """
+    tiers: dict[int, list[tuple[str, Any]]] = {0: [], 1: [], 2: [], 3: []}
+    for key, value in obj.items():
+        tier = _classify_field(key, value)
+        tiers[tier].append((key, value))
+    result: dict[str, Any] = {}
+    for tier in (0, 1, 3, 2):
+        for k, v in tiers[tier]:
+            result[k] = v
+    return result
+
+
+def _truncate_line(line: str, width: int) -> str:
+    """Truncate *line* to *width* characters, appending ``…`` if needed."""
+    if len(line) <= width:
+        return line
+    return line[: width - 1] + "…"
+
+
+def _format_short(data: Any, terminal_width: int) -> str:
+    """Format *data* as compact one-line-per-row JSON with field reordering and truncation."""
+    rows = _extract_rows(data)
+    if not rows:
+        return ""
+    lines: list[str] = []
+    for row in rows:
+        if isinstance(row, dict):
+            row = _reorder_fields(row)
+        line = json.dumps(row, separators=(",", ":"), default=str)
+        line = _truncate_line(line, terminal_width)
+        lines.append(line)
+    return "\n".join(lines)
 
 
 def apply_limit(data: Any, n: int) -> Any:
@@ -36,7 +113,7 @@ def apply_limit(data: Any, n: int) -> Any:
     return result
 
 
-def format_output(data: Any, fmt: str, limit: int | None = None, search: str | None = None) -> str:
+def format_output(data: Any, fmt: str, limit: int | None = None, search: str | None = None, short: bool = False) -> str:
     """Serialize *data* to the requested format string.
 
     Parameters
@@ -51,6 +128,9 @@ def format_output(data: Any, fmt: str, limit: int | None = None, search: str | N
     search:
         If set, search the data for this field name and return matching values
         instead of the full output.
+    short:
+        If True and fmt is ``"json"`` and search is None, use compact
+        single-line-per-row output with field reordering and truncation.
     """
     if limit is not None:
         data = apply_limit(data, limit)
@@ -58,6 +138,9 @@ def format_output(data: Any, fmt: str, limit: int | None = None, search: str | N
     if search is not None:
         values = search_field(data, search)
         return format_search_results(values, search)
+
+    if short and fmt == "json":
+        return _format_short(data, shutil.get_terminal_size().columns)
 
     if fmt == "json":
         return json.dumps(data, indent=2)
@@ -67,6 +150,9 @@ def format_output(data: Any, fmt: str, limit: int | None = None, search: str | N
 
     if fmt == "csv":
         return _format_csv(data)
+
+    if fmt == "tsv":
+        return _format_tsv(data)
 
     # Fallback to JSON for unknown formats
     return json.dumps(data, indent=2)
@@ -116,6 +202,20 @@ def _extract_rows(data: Any) -> list:
         # Single dict → one-row table
         return [data]
     return [data]
+
+
+def _format_tsv(data: Any) -> str:
+    """Render *data* as tab-separated values with a header row."""
+    rows = _extract_rows(data)
+    if not rows:
+        return ""
+    if isinstance(rows[0], dict):
+        headers = list(rows[0].keys())
+        lines = ["\t".join(headers)]
+        for row in rows:
+            lines.append("\t".join(str(row.get(h, "")) for h in headers))
+        return "\n".join(lines)
+    return "\n".join("\t".join(str(c) for c in row) for row in rows)
 
 
 # ---------------------------------------------------------------------------

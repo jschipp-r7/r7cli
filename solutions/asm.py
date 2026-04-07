@@ -85,34 +85,75 @@ def asm(ctx):
 
 
 # ---------------------------------------------------------------------------
-# asm list
+# asm connectors
 # ---------------------------------------------------------------------------
 
-@asm.command("list")
+@asm.group(cls=GlobalFlagHintGroup)
 @click.pass_context
-def asm_list(ctx):
-    """List the available saved queries from Surface Command."""
+def connectors(ctx):
+    """Connector commands."""
+    pass
+
+
+@connectors.command("list")
+@click.pass_context
+def connectors_list(ctx):
+    """List connectors from Surface Command."""
     config = _get_config(ctx)
     client = R7Client(config)
+    base = SC_BASE.format(region=config.region)
+    url = _SC_TABLE_URL.format(base=base)
 
     try:
-        items = _fetch_queries(client, config)
-        click.echo(format_output(items, config.output_format, config.limit, config.search))
+        result = client.post(
+            url,
+            json={"cypher": "MATCH (a:`sys.apps.integration`) RETURN a"},
+            params={"format": "json"},
+            solution="asm",
+            subcommand="connectors-list",
+        )
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
 
 
 # ---------------------------------------------------------------------------
-# asm get
+# asm queries
 # ---------------------------------------------------------------------------
 
-@asm.command("get")
+@asm.group(cls=GlobalFlagHintGroup)
+@click.pass_context
+def queries(ctx):
+    """Saved query commands."""
+    pass
+
+
+@queries.command("list")
+@click.pass_context
+def queries_list(ctx):
+    """List the available saved queries from Surface Command."""
+    config = _get_config(ctx)
+    client = R7Client(config)
+
+    try:
+        items = _fetch_queries(client, config)
+        click.echo(format_output(items, config.output_format, config.limit, config.search, short=config.short))
+    except R7Error as exc:
+        click.echo(str(exc), err=True)
+        sys.exit(exc.exit_code)
+
+
+# ---------------------------------------------------------------------------
+# asm queries get
+# ---------------------------------------------------------------------------
+
+@queries.command("get")
 @click.option("-j", "--id", "query_id", default=None, help="Query ID.")
 @click.option("-a", "--auto", "auto_select", is_flag=True,
               help="Interactively select a query from the list.")
 @click.pass_context
-def asm_get(ctx, query_id, auto_select):
+def queries_get(ctx, query_id, auto_select):
     """Get a saved query by ID."""
     config = _get_config(ctx)
     client = R7Client(config)
@@ -123,7 +164,7 @@ def asm_get(ctx, query_id, auto_select):
     try:
         if auto_select:
             selected = _interactive_query_select(client, config)
-            click.echo(format_output(selected, config.output_format, config.limit, config.search))
+            click.echo(format_output(selected, config.output_format, config.limit, config.search, short=config.short))
             return
 
         # Filter from the full list
@@ -132,24 +173,24 @@ def asm_get(ctx, query_id, auto_select):
         if not match:
             click.echo(f"No query found with ID '{query_id}'.", err=True)
             sys.exit(1)
-        click.echo(format_output(match[0], config.output_format, config.limit, config.search))
+        click.echo(format_output(match[0], config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
 
 
 # ---------------------------------------------------------------------------
-# asm execute
+# asm queries execute
 # ---------------------------------------------------------------------------
 
-@asm.command("execute")
+@queries.command("execute")
 @click.option("-q", "--query", "query", default=None, help="Cypher query string.")
 @click.option("-f", "--query-file", type=click.Path(exists=True), default=None,
               help="Path to file containing a Cypher query.")
 @click.option("-a", "--auto", "auto_select", is_flag=True,
               help="Interactively select a saved query and execute it.")
 @click.pass_context
-def asm_execute(ctx, query, query_file, auto_select):
+def queries_execute(ctx, query, query_file, auto_select):
     """Execute a Cypher query against Surface Command."""
     config = _get_config(ctx)
     client = R7Client(config)
@@ -183,7 +224,7 @@ def asm_execute(ctx, query, query_file, auto_select):
             solution="asm",
             subcommand="execute",
         )
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)

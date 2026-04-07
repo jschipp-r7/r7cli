@@ -66,11 +66,13 @@ def workflows(ctx):
 @click.option("--limit", "limit_param", type=int, default=30, help="Max workflows to return.")
 @click.option("--offset", type=int, default=0, help="Offset for pagination.")
 @click.option("--name", default=None, help="Filter by workflow name.")
+@click.option("--state", type=click.Choice(["active", "inactive"], case_sensitive=False),
+              default=None, help="Filter by workflow state (active or inactive).")
 @click.option("-a", "--auto", "auto_poll", is_flag=True,
               help="Poll for new entries and only print new ones.")
 @click.option("-i", "--interval", type=int, default=10, help="Polling interval in seconds (default: 10).")
 @click.pass_context
-def workflows_list(ctx, limit_param, offset, name, auto_poll, interval):
+def workflows_list(ctx, limit_param, offset, name, state, auto_poll, interval):
     """List workflows."""
     config = _get_config(ctx)
     client = R7Client(config)
@@ -83,12 +85,14 @@ def workflows_list(ctx, limit_param, offset, name, auto_poll, interval):
     params: dict = {"limit": limit_param, "offset": offset}
     if name:
         params["name"] = name
+    if state:
+        params["state"] = state.lower()
 
     try:
         result = client.get(url, params=params, solution="soar", subcommand="workflows-list")
 
         if not auto_poll:
-            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
         else:
             import time as _time
             seen_ids: set[str] = set()
@@ -106,7 +110,7 @@ def workflows_list(ctx, limit_param, offset, name, auto_poll, interval):
                     item_id = _extract_item_id(item)
                     if item_id and item_id not in seen_ids:
                         seen_ids.add(item_id)
-                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+                        click.echo(format_output(item, config.output_format, config.limit, config.search, short=config.short))
     except KeyboardInterrupt:
         click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
@@ -136,7 +140,7 @@ def workflows_get(ctx, workflow_id, auto_select):
 
     try:
         result = client.get(url, solution="soar", subcommand="workflows-get")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -169,7 +173,7 @@ def workflows_execute(ctx, workflow_id, auto_select, data_str, data_file):
     try:
         result = client.post(url, json=body, solution="soar", subcommand="workflows-execute")
         if result:
-            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
         else:
             click.echo(f"Workflow {workflow_id} successfully sent for execution.")
     except R7Error as exc:
@@ -199,7 +203,7 @@ def workflows_activate(ctx, workflow_id, auto_select):
 
     try:
         result = client.post(url, json={}, solution="soar", subcommand="workflows-activate")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -227,7 +231,7 @@ def workflows_deactivate(ctx, workflow_id, auto_select):
 
     try:
         result = client.post(url, json={}, solution="soar", subcommand="workflows-deactivate")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -255,7 +259,7 @@ def workflows_export(ctx, workflow_id, auto_select):
 
     try:
         result = client.get(url, solution="soar", subcommand="workflows-export")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -289,7 +293,7 @@ def workflows_import(ctx, file_path):
 
     try:
         result = client.post(url, json=body, solution="soar", subcommand="workflows-import")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -334,7 +338,7 @@ def jobs_list(ctx, limit_param, offset, status, auto_poll, interval):
         result = client.get(url, params=params, solution="soar", subcommand="jobs-list")
 
         if not auto_poll:
-            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
         else:
             import time as _time
             import json as _json
@@ -381,7 +385,7 @@ def jobs_list(ctx, limit_param, offset, status, auto_poll, interval):
                         jid = _json.dumps(j, sort_keys=True, default=str)
                     if jid not in seen_ids:
                         seen_ids.add(jid)
-                        click.echo(format_output(j, config.output_format, config.limit, config.search))
+                        click.echo(format_output(j, config.output_format, config.limit, config.search, short=config.short))
     except KeyboardInterrupt:
         click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
@@ -412,7 +416,7 @@ def jobs_get(ctx, job_id, auto_select):
 
     try:
         result = client.get(url, solution="soar", subcommand="jobs-get")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -441,7 +445,7 @@ def jobs_cancel(ctx, job_id, auto_select):
 
     try:
         result = client.post(url, json={}, solution="soar", subcommand="jobs-cancel")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -563,7 +567,7 @@ def artifacts_list(ctx, limit_param, offset, filter_text, auto_poll, interval):
         result = client.get(url, params=params, solution="soar", subcommand="artifacts-list")
 
         if not auto_poll:
-            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
         else:
             import time as _time
             seen_ids: set[str] = set()
@@ -581,7 +585,7 @@ def artifacts_list(ctx, limit_param, offset, filter_text, auto_poll, interval):
                     item_id = _extract_item_id(item)
                     if item_id and item_id not in seen_ids:
                         seen_ids.add(item_id)
-                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+                        click.echo(format_output(item, config.output_format, config.limit, config.search, short=config.short))
     except KeyboardInterrupt:
         click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
@@ -611,7 +615,7 @@ def artifacts_get(ctx, artifact_id, auto_select):
 
     try:
         result = client.get(url, solution="soar", subcommand="artifacts-get")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -637,7 +641,7 @@ def artifacts_create(ctx, data_str, data_file):
 
     try:
         result = client.post(url, json=body, solution="soar", subcommand="artifacts-create")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -665,7 +669,7 @@ def artifacts_delete(ctx, artifact_id, auto_select):
 
     try:
         result = client.request("DELETE", url, solution="soar", subcommand="artifacts-delete")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -697,7 +701,7 @@ def artifacts_entities(ctx, artifact_id, auto_select, limit_param, offset):
 
     try:
         result = client.get(url, params=params, solution="soar", subcommand="artifacts-entities")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -816,7 +820,7 @@ def snippets_export(ctx, snippet_id):
 
     try:
         result = client.get(url, solution="soar", subcommand="snippets-export")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -850,7 +854,7 @@ def snippets_import(ctx, file_path):
 
     try:
         result = client.post(url, json=body, solution="soar", subcommand="snippets-import")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -895,7 +899,7 @@ def plugins_import(ctx, file_path):
 
     try:
         result = client.post(url, json=body, solution="soar", subcommand="plugins-import")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)

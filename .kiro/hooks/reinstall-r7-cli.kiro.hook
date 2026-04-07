@@ -1,0 +1,16 @@
+{
+  "enabled": true,
+  "name": "Reinstall r7-cli",
+  "description": "Reinstalls the r7-cli package into the venv after Python file changes so the user can test with .venv/bin/r7-cli",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "*.py"
+    ]
+  },
+  "then": {
+    "type": "runCommand",
+    "command": ".venv/bin/pip install -e . --quiet"
+  }
+}

@@ -169,7 +169,7 @@ def api_version(ctx):
     client = _drp_client(config)
     url = f"{DRP_BASE}/public/v1/api/version"
     result = client.get(url, auth=_drp_auth(config), solution="drp", subcommand="api-version")
-    click.echo(format_output(result, config.output_format, config.limit, config.search))
+    click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
 
 
 # ---------------------------------------------------------------------------
@@ -185,7 +185,7 @@ def modules(ctx):
     client = _drp_client(config)
     url = f"{DRP_BASE}/public/v1/account/system-modules"
     result = client.get(url, auth=_drp_auth(config), solution="drp", subcommand="modules")
-    click.echo(format_output(result, config.output_format, config.limit, config.search))
+    click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
 
 
 # ---------------------------------------------------------------------------
@@ -214,7 +214,7 @@ def assets_list(ctx, auto_poll, interval):
         result = client.get(url, auth=_drp_auth(config), solution="drp", subcommand="assets-list")
 
         if not auto_poll:
-            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
         else:
             import time as _time
             seen_ids: set[str] = set()
@@ -232,7 +232,7 @@ def assets_list(ctx, auto_poll, interval):
                     item_id = _extract_item_id(item)
                     if item_id and item_id not in seen_ids:
                         seen_ids.add(item_id)
-                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+                        click.echo(format_output(item, config.output_format, config.limit, config.search, short=config.short))
     except KeyboardInterrupt:
         click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
@@ -294,7 +294,7 @@ def ioc_sources_list(ctx, enabled_only, name_filter, confidence, auto_poll, inte
 
         if not auto_poll:
             if not has_filters:
-                click.echo(format_output(result, config.output_format, config.limit, config.search))
+                click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
                 return
             # Flatten all source lists from the response
             all_sources = []
@@ -318,7 +318,7 @@ def ioc_sources_list(ctx, enabled_only, name_filter, confidence, auto_poll, inte
                     click.echo(f"Invalid --confidence value: '{confidence}'. Use e.g. '>=2', '<3', '=1'", err=True)
                     sys.exit(1)
                 all_sources = [s for s in all_sources if s.get("ConfidenceLevel") is not None and cmp_func(s["ConfidenceLevel"], threshold)]
-            click.echo(format_output(all_sources, config.output_format, config.limit, config.search))
+            click.echo(format_output(all_sources, config.output_format, config.limit, config.search, short=config.short))
         else:
             import time as _time
             seen_ids: set[str] = set()
@@ -336,7 +336,7 @@ def ioc_sources_list(ctx, enabled_only, name_filter, confidence, auto_poll, inte
                     item_id = _extract_item_id(item)
                     if item_id and item_id not in seen_ids:
                         seen_ids.add(item_id)
-                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+                        click.echo(format_output(item, config.output_format, config.limit, config.search, short=config.short))
     except KeyboardInterrupt:
         click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
@@ -418,13 +418,13 @@ def alerts_list(ctx, severity, alert_type, remediation_status, days, resolve, au
 
         if not resolve and not auto_poll:
             # Fast mode — just return the raw alert list
-            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
             return
 
         # Resolve mode or polling — need to fetch details
         ids = _extract_ids(result)
         if not ids:
-            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
             return
 
         if resolve:
@@ -433,7 +433,7 @@ def alerts_list(ctx, severity, alert_type, remediation_status, days, resolve, au
                 details = _filter_by_date(details, "FoundDate", days)
 
         if not auto_poll:
-            click.echo(format_output(details, config.output_format, config.limit, config.search))
+            click.echo(format_output(details, config.output_format, config.limit, config.search, short=config.short))
         else:
             import time as _time
             seen_ids: set[str] = set()
@@ -464,7 +464,7 @@ def alerts_list(ctx, severity, alert_type, remediation_status, days, resolve, au
                     if days is not None:
                         new_details = _filter_by_date(new_details, "FoundDate", days)
                     for item in new_details:
-                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+                        click.echo(format_output(item, config.output_format, config.limit, config.search, short=config.short))
                 else:
                     for aid in new_alert_ids:
                         click.echo(aid)
@@ -491,7 +491,7 @@ def alerts_get(ctx, alert_id):
     url = f"{DRP_BASE}/public/v1/data/alerts/get-complete-alert/{alert_id}"
     try:
         result = client.get(url, auth=_drp_auth(config), solution="drp", subcommand="alerts-get")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -554,12 +554,12 @@ def phishing_threats_list(ctx, active_only, days, resolve, auto_poll, interval):
         result = client.get(url, auth=_drp_auth(config), solution="drp", subcommand="phishing-threats-list")
 
         if not resolve and not auto_poll:
-            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
             return
 
         ids = _extract_ids(result)
         if not ids:
-            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
             return
 
         if resolve:
@@ -570,7 +570,7 @@ def phishing_threats_list(ctx, active_only, days, resolve, auto_poll, interval):
                 details = _filter_by_date(details, "LastSourceDate", days)
 
         if not auto_poll:
-            click.echo(format_output(details, config.output_format, config.limit, config.search))
+            click.echo(format_output(details, config.output_format, config.limit, config.search, short=config.short))
         else:
             import time as _time
             seen_ids: set[str] = set()
@@ -601,7 +601,7 @@ def phishing_threats_list(ctx, active_only, days, resolve, auto_poll, interval):
                     if days is not None:
                         new_details = _filter_by_date(new_details, "LastSourceDate", days)
                     for item in new_details:
-                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+                        click.echo(format_output(item, config.output_format, config.limit, config.search, short=config.short))
                 else:
                     for aid in new_threat_ids:
                         click.echo(aid)
@@ -628,7 +628,7 @@ def phishing_threats_get(ctx, threat_id):
     url = f"{DRP_BASE}/public/v1/data/phishing-domains-threats/get-complete-threat/{threat_id}"
     try:
         result = client.get(url, auth=_drp_auth(config), solution="drp", subcommand="phishing-threats-get")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -720,11 +720,11 @@ def takedowns_list(ctx, days, auto_poll, interval, threat_type, severity, status
         ids = _extract_ids(result)
 
         if not ids:
-            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
             return
 
         if not auto_poll:
-            click.echo(format_output(details, config.output_format, config.limit, config.search))
+            click.echo(format_output(details, config.output_format, config.limit, config.search, short=config.short))
         else:
             import time as _time
             seen_ids: set[str] = set()
@@ -740,7 +740,7 @@ def takedowns_list(ctx, days, auto_poll, interval, threat_type, severity, status
                     item_id = _extract_item_id(item)
                     if item_id and item_id not in seen_ids:
                         seen_ids.add(item_id)
-                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+                        click.echo(format_output(item, config.output_format, config.limit, config.search, short=config.short))
     except KeyboardInterrupt:
         click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
@@ -774,10 +774,10 @@ def risk_score(ctx, fail_above):
         click.echo(str(result))
         score = result
     elif isinstance(result, dict):
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
         score = result.get("Score", result.get("score"))
     else:
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
         score = None
 
     if fail_above is not None and score is not None and score > fail_above:
@@ -845,9 +845,9 @@ def reported_domains_list(ctx, auto_poll, interval):
                     item_id = _extract_item_id(item)
                     if item_id and item_id not in seen_ids:
                         seen_ids.add(item_id)
-                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+                        click.echo(format_output(item, config.output_format, config.limit, config.search, short=config.short))
         elif not auto_poll:
-            click.echo(format_output(results, config.output_format, config.limit, config.search))
+            click.echo(format_output(results, config.output_format, config.limit, config.search, short=config.short))
         else:
             import time as _time
             seen_ids: set[str] = set()
@@ -863,7 +863,7 @@ def reported_domains_list(ctx, auto_poll, interval):
                     item_id = _extract_item_id(item)
                     if item_id and item_id not in seen_ids:
                         seen_ids.add(item_id)
-                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+                        click.echo(format_output(item, config.output_format, config.limit, config.search, short=config.short))
     except KeyboardInterrupt:
         click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
@@ -939,7 +939,7 @@ def ssl_cert_threats_list(ctx, auto_poll, interval, domain, common_name, expired
         ids = _extract_ids(result)
 
         if not ids:
-            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
             return
 
         if not auto_poll:
@@ -961,9 +961,9 @@ def ssl_cert_threats_list(ctx, auto_poll, interval, domain, common_name, expired
                 if valid is not None:
                     v_val = valid.lower() == "true"
                     filtered = [t for t in filtered if isinstance(t.get("CertificateStatus"), dict) and t["CertificateStatus"].get("Valid") is v_val]
-                click.echo(format_output(filtered, config.output_format, config.limit, config.search))
+                click.echo(format_output(filtered, config.output_format, config.limit, config.search, short=config.short))
             else:
-                click.echo(format_output(details, config.output_format, config.limit, config.search))
+                click.echo(format_output(details, config.output_format, config.limit, config.search, short=config.short))
         else:
             import time as _time
             seen_ids: set[str] = set()
@@ -979,7 +979,7 @@ def ssl_cert_threats_list(ctx, auto_poll, interval, domain, common_name, expired
                     item_id = _extract_item_id(item)
                     if item_id and item_id not in seen_ids:
                         seen_ids.add(item_id)
-                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+                        click.echo(format_output(item, config.output_format, config.limit, config.search, short=config.short))
     except KeyboardInterrupt:
         click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
@@ -1049,7 +1049,7 @@ def ssl_issue_threats_list(ctx, auto_poll, interval, domain, ip, issue):
         ids = _extract_ids(result)
 
         if not ids:
-            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
             return
 
         if not auto_poll:
@@ -1067,9 +1067,9 @@ def ssl_issue_threats_list(ctx, auto_poll, interval, domain, ip, issue):
                         i_lower in di.get("name", "").lower() or i_lower in di.get("title", "").lower()
                         for di in t.get("DetectedIssues", [])
                     )]
-                click.echo(format_output(filtered, config.output_format, config.limit, config.search))
+                click.echo(format_output(filtered, config.output_format, config.limit, config.search, short=config.short))
             else:
-                click.echo(format_output(details, config.output_format, config.limit, config.search))
+                click.echo(format_output(details, config.output_format, config.limit, config.search, short=config.short))
         else:
             import time as _time
             seen_ids: set[str] = set()
@@ -1085,7 +1085,7 @@ def ssl_issue_threats_list(ctx, auto_poll, interval, domain, ip, issue):
                     item_id = _extract_item_id(item)
                     if item_id and item_id not in seen_ids:
                         seen_ids.add(item_id)
-                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+                        click.echo(format_output(item, config.output_format, config.limit, config.search, short=config.short))
     except KeyboardInterrupt:
         click.echo("\nStopped polling.", err=True)
     except R7Error as exc:

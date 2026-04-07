@@ -16,10 +16,14 @@ from r7cli.cli_group import GlobalFlagHintGroup
 from r7cli.client import R7Client
 from r7cli.config import Config
 from r7cli.models import (
+    ACCOUNT_BASE,
     IDR_GQL,
     IDR_LOGS_BASE,
     IDR_V1_BASE,
+    GQL_AGENTS_LIST,
     GQL_QUARANTINE_STATE,
+    REGION_ALIASES,
+    APIError,
     R7Error,
     UserInputError,
 )
@@ -77,6 +81,60 @@ def _resolve_body(data_str: str | None, data_file: str | None) -> dict | None:
 
 
 _DOC_BASE = "https://help.rapid7.com/insightidr/en-us/api/v1/docs.html"
+
+
+# ---------------------------------------------------------------------------
+# Agent helpers
+# ---------------------------------------------------------------------------
+
+def _resolve_org_id(client: R7Client, config: Config) -> str:
+    """Resolve the organization ID by matching the configured region."""
+    url = ACCOUNT_BASE.format(region=config.region) + "/organizations"
+    orgs = client.get(url, solution="siem", subcommand="agents-list")
+    if isinstance(orgs, dict):
+        orgs = orgs.get("organizations", orgs.get("data", []))
+    for org in orgs:
+        org_region = REGION_ALIASES.get(org.get("region", ""), org.get("region", ""))
+        if org_region == config.region:
+            return org["id"]
+    raise UserInputError(f"No organization found for region '{config.region}'")
+
+
+def _flatten_agent_node(node: dict) -> dict:
+    """Convert a nested GQL agent node into a flat Agent_Record dict."""
+    agent = node.get("agent") or {}
+    host = node.get("host") or {}
+    primary = host.get("primaryAddress") or {}
+    host_names = host.get("hostNames") or []
+    quarantine = agent.get("quarantineState") or {}
+
+    return {
+        "agent_id": agent.get("id"),
+        "agent_status": agent.get("agentStatus"),
+        "quarantine_state": quarantine.get("currentState"),
+        "beacon_time": agent.get("beaconTime"),
+        "agent_last_update": agent.get("agentLastUpdateTime"),
+        "host_names": ", ".join(h.get("name", "") for h in host_names),
+        "primary_ip": primary.get("ip"),
+        "primary_mac": primary.get("mac"),
+        "alternate_addresses": host.get("alternateAddresses"),
+    }
+
+
+def _apply_agent_filters(
+    records: list[dict],
+    ngav_status: str | None,
+    velociraptor_status: str | None,
+) -> list[dict]:
+    """Filter agent records by NGAV health and/or velociraptor state."""
+    result = records
+    if ngav_status is not None:
+        result = [r for r in result if r.get("ngav_status") == ngav_status]
+    if velociraptor_status == "RUNNING":
+        result = [r for r in result if r.get("velociraptor_state") == "RUNNING"]
+    elif velociraptor_status == "NOT_RUNNING":
+        result = [r for r in result if r.get("velociraptor_state") != "RUNNING"]
+    return result
 
 
 _VALID_RESOURCE_TYPES = (
@@ -215,9 +273,9 @@ def health_metrics(ctx, resource_type, auto_poll, interval, state, health_name, 
                     items = [r for r in items if n_lower in r.get("name", "").lower()]
                 if issues_only:
                     items = [r for r in items if r.get("issue") is not None]
-                click.echo(format_output(items, config.output_format, config.limit, config.search))
+                click.echo(format_output(items, config.output_format, config.limit, config.search, short=config.short))
             else:
-                click.echo(format_output(result, config.output_format, config.limit, config.search))
+                click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
         else:
             import time as _time
             seen_ids: set[str] = set()
@@ -235,7 +293,7 @@ def health_metrics(ctx, resource_type, auto_poll, interval, state, health_name, 
                     item_id = _extract_item_id(item)
                     if item_id and item_id not in seen_ids:
                         seen_ids.add(item_id)
-                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+                        click.echo(format_output(item, config.output_format, config.limit, config.search, short=config.short))
     except KeyboardInterrupt:
         click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
@@ -280,7 +338,7 @@ def logsets_list(ctx, auto_poll, interval):
         result = client.get(url, solution="siem", subcommand="logsets-list")
 
         if not auto_poll:
-            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
         else:
             import time as _time
             seen_ids: set[str] = set()
@@ -298,7 +356,7 @@ def logsets_list(ctx, auto_poll, interval):
                     item_id = _extract_item_id(item)
                     if item_id and item_id not in seen_ids:
                         seen_ids.add(item_id)
-                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+                        click.echo(format_output(item, config.output_format, config.limit, config.search, short=config.short))
     except KeyboardInterrupt:
         click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
@@ -489,7 +547,7 @@ def log_storage(ctx, from_date, to_date):
         daily.sort(key=lambda d: d.get("date", ""), reverse=True)
         result["daily_usage"] = daily
 
-    click.echo(format_output(result, config.output_format, config.limit, config.search))
+    click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
 
 
 @logs.command("retention")
@@ -530,7 +588,7 @@ def log_retention(ctx, min_days):
             except (TypeError, ValueError):
                 pass
 
-    click.echo(format_output(result, config.output_format, config.limit, config.search))
+    click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
 
     if min_days is not None and raw_retention_ms is not None:
         try:
@@ -596,9 +654,9 @@ def event_sources_list(ctx, auto_poll, interval, state, es_name, issues_only):
                     items = [r for r in items if n_lower in r.get("name", "").lower()]
                 if issues_only:
                     items = [r for r in items if r.get("issue") is not None]
-                click.echo(format_output(items, config.output_format, config.limit, config.search))
+                click.echo(format_output(items, config.output_format, config.limit, config.search, short=config.short))
             else:
-                click.echo(format_output(result, config.output_format, config.limit, config.search))
+                click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
         else:
             import time as _time
             seen_ids: set[str] = set()
@@ -616,7 +674,7 @@ def event_sources_list(ctx, auto_poll, interval, state, es_name, issues_only):
                     item_id = _extract_item_id(item)
                     if item_id and item_id not in seen_ids:
                         seen_ids.add(item_id)
-                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+                        click.echo(format_output(item, config.output_format, config.limit, config.search, short=config.short))
     except KeyboardInterrupt:
         click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
@@ -651,7 +709,7 @@ def quarantine_state(ctx, state):
         )
 
         if not state:
-            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
             return
 
         # With --state filter, extract and filter nodes
@@ -672,7 +730,7 @@ def quarantine_state(ctx, state):
             if q_state == state:
                 filtered.append(node)
 
-        click.echo(format_output(filtered, config.output_format, config.limit, config.search))
+        click.echo(format_output(filtered, config.output_format, config.limit, config.search, short=config.short))
 
     except R7Error as exc:
         click.echo(str(exc), err=True)
@@ -711,7 +769,7 @@ def accounts_search(ctx, index, size, data_str, data_file):
 
     try:
         result = client.post(url, json=body, params=params, solution="siem", subcommand="accounts-search")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -732,7 +790,7 @@ def accounts_get(ctx, rrn):
 
     try:
         result = client.get(url, solution="siem", subcommand="accounts-get")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -775,7 +833,7 @@ def idr_assets_search(ctx, index, size, data_str, data_file):
 
     try:
         result = client.post(url, json=body, params=params, solution="siem", subcommand="idr-assets-search")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -801,7 +859,7 @@ def idr_assets_get(ctx, rrn):
 
     try:
         result = client.get(url, solution="siem", subcommand="idr-assets-get")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -822,7 +880,7 @@ def idr_assets_local_account(ctx, rrn):
     url = IDR_V1_BASE.format(region=config.region) + f"/assets/local-accounts/{rrn}"
     try:
         result = client.get(url, solution="siem", subcommand="idr-assets-local-account")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -848,7 +906,7 @@ def idr_assets_search_local_accounts(ctx, index, size, data_str, data_file):
     params = {"index": index, "size": size}
     try:
         result = client.post(url, json=body, params=params, solution="siem", subcommand="idr-assets-search-local-accounts")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -963,13 +1021,13 @@ def investigations_list(ctx, index, size, all_pages, auto_poll, interval, status
             all_items = _fetch_all_idr_pages()
             if has_filters:
                 all_items = _apply_filters(all_items)
-            click.echo(format_output(all_items, config.output_format, config.limit, config.search))
+            click.echo(format_output(all_items, config.output_format, config.limit, config.search, short=config.short))
             return
 
         result = client.get(url, params=params, solution="siem", subcommand="investigations-list")
 
         if not auto_poll:
-            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
         else:
             import time as _time
             seen_ids: set[str] = set()
@@ -987,7 +1045,7 @@ def investigations_list(ctx, index, size, all_pages, auto_poll, interval, status
                     item_id = _extract_item_id(item)
                     if item_id and item_id not in seen_ids:
                         seen_ids.add(item_id)
-                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+                        click.echo(format_output(item, config.output_format, config.limit, config.search, short=config.short))
     except KeyboardInterrupt:
         click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
@@ -1018,7 +1076,7 @@ def investigations_set_status(ctx, investigation_id, status):
 
     try:
         result = client.request("PUT", url, solution="siem", subcommand="investigations-set-status")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -1045,7 +1103,7 @@ def investigations_close_bulk(ctx, data_str, data_file):
 
     try:
         result = client.post(url, json=body, solution="siem", subcommand="investigations-close-bulk")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -1067,7 +1125,7 @@ def investigations_assign(ctx, investigation_id, user_email):
     url = IDR_V1_BASE.format(region=config.region) + f"/investigations/{investigation_id}/assignee"
     try:
         result = client.request("PUT", url, json={"user_email_address": user_email}, solution="siem", subcommand="investigations-assign")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -1107,7 +1165,7 @@ def users_search(ctx, index, size, all_pages, data_str, data_file):
         if not all_pages:
             params = {"index": index, "size": size}
             result = client.post(url, json=body, params=params, solution="siem", subcommand="users-list")
-            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
         else:
             all_data: list[dict] = []
             page = index
@@ -1123,7 +1181,7 @@ def users_search(ctx, index, size, all_pages, data_str, data_file):
                 page += 1
                 if page >= total_pages:
                     break
-            click.echo(format_output(all_data, config.output_format, config.limit, config.search))
+            click.echo(format_output(all_data, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -1151,7 +1209,7 @@ def users_get(ctx, rrn, auto_select):
 
     try:
         result = client.get(url, solution="siem", subcommand="users-get")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -1220,7 +1278,7 @@ def threats_create(ctx, data_str, data_file):
 
     try:
         result = client.post(url, json=body, solution="siem", subcommand="threats-create")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -1248,7 +1306,7 @@ def threats_add_indicators(ctx, key, data_str, data_file):
 
     try:
         result = client.post(url, json=body, solution="siem", subcommand="threats-add-indicators")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -1276,7 +1334,7 @@ def threats_replace_indicators(ctx, key, data_str, data_file):
 
     try:
         result = client.post(url, json=body, solution="siem", subcommand="threats-replace-indicators")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -1297,7 +1355,7 @@ def threats_delete(ctx, key):
     url = IDR_V1_BASE.format(region=config.region) + f"/customthreats/key/{key}/delete"
     try:
         result = client.post(url, solution="siem", subcommand="threats-delete")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -1381,7 +1439,7 @@ def comments_list(ctx, index, size):
                 # Skip investigations where comment lookup fails
                 continue
 
-        click.echo(format_output(with_comments, config.output_format, config.limit, config.search))
+        click.echo(format_output(with_comments, config.output_format, config.limit, config.search, short=config.short))
 
     except R7Error as exc:
         click.echo(str(exc), err=True)
@@ -1409,7 +1467,7 @@ def comments_create(ctx, data_str, data_file):
 
     try:
         result = client.post(url, json=body, solution="siem", subcommand="comments-create")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -1436,7 +1494,7 @@ def comments_get(ctx, rrn):
 
     try:
         result = client.get(url, solution="siem", subcommand="comments-get")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -1459,7 +1517,7 @@ def comments_update(ctx, rrn, visibility):
     url = IDR_V1_BASE.format(region=config.region) + f"/comments/{rrn}/{visibility}"
     try:
         result = client.request("PUT", url, solution="siem", subcommand="comments-update")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -1481,7 +1539,7 @@ def comments_delete(ctx, rrn):
     url = IDR_V1_BASE.format(region=config.region) + f"/comments/{rrn}"
     try:
         result = client.request("DELETE", url, solution="siem", subcommand="comments-delete")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -1563,7 +1621,7 @@ def attachments_list(ctx, index, size):
             except R7Error:
                 continue
 
-        click.echo(format_output(with_attachments, config.output_format, config.limit, config.search))
+        click.echo(format_output(with_attachments, config.output_format, config.limit, config.search, short=config.short))
 
     except R7Error as exc:
         click.echo(str(exc), err=True)
@@ -1591,7 +1649,7 @@ def attachments_get(ctx, rrn):
 
     try:
         result = client.get(url, solution="siem", subcommand="attachments-get")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -1613,7 +1671,7 @@ def attachments_delete(ctx, rrn):
     url = IDR_V1_BASE.format(region=config.region) + f"/attachments/{rrn}"
     try:
         result = client.request("DELETE", url, solution="siem", subcommand="attachments-delete")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -1663,7 +1721,7 @@ def collectors_list(ctx, auto_poll, interval, state, coll_name):
             if coll_name:
                 n_lower = coll_name.lower()
                 items = [c for c in items if n_lower in c.get("name", "").lower()]
-            click.echo(format_output(items if (state or coll_name) else result, config.output_format, config.limit, config.search))
+            click.echo(format_output(items if (state or coll_name) else result, config.output_format, config.limit, config.search, short=config.short))
         else:
             seen_ids: set[str] = set()
             items = _extract_items(result)
@@ -1680,7 +1738,7 @@ def collectors_list(ctx, auto_poll, interval, state, coll_name):
                     item_id = _extract_item_id(item)
                     if item_id and item_id not in seen_ids:
                         seen_ids.add(item_id)
-                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+                        click.echo(format_output(item, config.output_format, config.limit, config.search, short=config.short))
     except KeyboardInterrupt:
         click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
@@ -1709,7 +1767,7 @@ def collectors_create(ctx, data_str, data_file):
 
     try:
         result = client.post(url, json=body, solution="siem", subcommand="collectors-create")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -1747,7 +1805,7 @@ def saved_queries_list(ctx, auto_poll, interval):
         result = client.get(url, solution="siem", subcommand="saved-queries-list")
 
         if not auto_poll:
-            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
         else:
             import time as _time
             seen_ids: set[str] = set()
@@ -1765,7 +1823,7 @@ def saved_queries_list(ctx, auto_poll, interval):
                     item_id = _extract_item_id(item)
                     if item_id and item_id not in seen_ids:
                         seen_ids.add(item_id)
-                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+                        click.echo(format_output(item, config.output_format, config.limit, config.search, short=config.short))
     except KeyboardInterrupt:
         click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
@@ -1788,7 +1846,7 @@ def saved_queries_get(ctx, query_id):
 
     try:
         result = client.get(url, solution="siem", subcommand="saved-queries-get")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -1815,7 +1873,7 @@ def saved_queries_create(ctx, data_str, data_file):
 
     try:
         result = client.post(url, json=body, solution="siem", subcommand="saved-queries-create")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -1843,7 +1901,7 @@ def saved_queries_update(ctx, query_id, data_str, data_file):
 
     try:
         result = client.request("PUT", url, json=body, solution="siem", subcommand="saved-queries-update")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -1864,7 +1922,7 @@ def saved_queries_delete(ctx, query_id):
 
     try:
         result = client.request("DELETE", url, solution="siem", subcommand="saved-queries-delete")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -1899,7 +1957,7 @@ def variables_list(ctx, auto_poll, interval):
         result = client.get(url, solution="siem", subcommand="variables-list")
 
         if not auto_poll:
-            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
         else:
             import time as _time
             seen_ids: set[str] = set()
@@ -1917,7 +1975,7 @@ def variables_list(ctx, auto_poll, interval):
                     item_id = _extract_item_id(item)
                     if item_id and item_id not in seen_ids:
                         seen_ids.add(item_id)
-                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+                        click.echo(format_output(item, config.output_format, config.limit, config.search, short=config.short))
     except KeyboardInterrupt:
         click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
@@ -1940,7 +1998,7 @@ def variables_get(ctx, variable_id):
 
     try:
         result = client.get(url, solution="siem", subcommand="variables-get")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -1967,7 +2025,7 @@ def variables_update(ctx, variable_id, data_str, data_file):
     url = IDR_LOGS_BASE.format(region=config.region) + f"/variables/{variable_id}"
     try:
         result = client.request("PUT", url, json=body, solution="siem", subcommand="variables-update")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -1988,7 +2046,7 @@ def variables_delete(ctx, variable_id):
     url = IDR_LOGS_BASE.format(region=config.region) + f"/variables/{variable_id}"
     try:
         result = client.request("DELETE", url, solution="siem", subcommand="variables-delete")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -2121,9 +2179,9 @@ def detection_rules_list(ctx, auto_poll, interval, rule_name, rule_type, sub_typ
                     items = [r for r in items if any(
                         a.get("enabled") is en_val for a in r.get("actions", [])
                     )]
-                click.echo(format_output(items, config.output_format, config.limit, config.search))
+                click.echo(format_output(items, config.output_format, config.limit, config.search, short=config.short))
             else:
-                click.echo(format_output(result, config.output_format, config.limit, config.search))
+                click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
         else:
             import time as _time
             seen_ids: set[str] = set()
@@ -2141,7 +2199,7 @@ def detection_rules_list(ctx, auto_poll, interval, rule_name, rule_type, sub_typ
                     item_id = _extract_item_id(item)
                     if item_id and item_id not in seen_ids:
                         seen_ids.add(item_id)
-                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+                        click.echo(format_output(item, config.output_format, config.limit, config.search, short=config.short))
     except KeyboardInterrupt:
         click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
@@ -2177,7 +2235,7 @@ def detection_rules_get(ctx, rule_id, auto_select):
 
     try:
         result = client.get(url, solution="siem", subcommand="detection-rules-get")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -2210,7 +2268,7 @@ def detection_rules_create(ctx, data_str, data_file):
 
     try:
         result = client.post(url, json=body, solution="siem", subcommand="detection-rules-create")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -2244,7 +2302,7 @@ def detection_rules_delete(ctx, rule_id, auto_select):
 
     try:
         result = client.request("DELETE", url, solution="siem", subcommand="detection-rules-delete")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -2269,7 +2327,7 @@ def log_keys(ctx, log_id):
 
     try:
         result = client.get(url, solution="siem", subcommand="log-keys")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -2336,9 +2394,9 @@ def log_mgmt_list(ctx, auto_poll, interval, log_name, source_type, logset_name):
             if has_filters:
                 items = _extract_items(result)
                 items = _apply_log_filters(items)
-                click.echo(format_output(items, config.output_format, config.limit, config.search))
+                click.echo(format_output(items, config.output_format, config.limit, config.search, short=config.short))
             else:
-                click.echo(format_output(result, config.output_format, config.limit, config.search))
+                click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
         else:
             import time as _time
             seen_ids: set[str] = set()
@@ -2356,7 +2414,7 @@ def log_mgmt_list(ctx, auto_poll, interval, log_name, source_type, logset_name):
                     item_id = _extract_item_id(item)
                     if item_id and item_id not in seen_ids:
                         seen_ids.add(item_id)
-                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+                        click.echo(format_output(item, config.output_format, config.limit, config.search, short=config.short))
     except KeyboardInterrupt:
         click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
@@ -2379,7 +2437,7 @@ def log_mgmt_get(ctx, log_id):
 
     try:
         result = client.get(url, solution="siem", subcommand="log-mgmt-get")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -2400,7 +2458,7 @@ def log_mgmt_delete(ctx, log_id):
 
     try:
         result = client.request("DELETE", url, solution="siem", subcommand="log-mgmt-delete")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -2435,7 +2493,7 @@ def pre_computed_list(ctx, auto_poll, interval):
         result = client.get(url, solution="siem", subcommand="pre-computed-list")
 
         if not auto_poll:
-            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
         else:
             import time as _time
             seen_ids: set[str] = set()
@@ -2453,7 +2511,7 @@ def pre_computed_list(ctx, auto_poll, interval):
                     item_id = _extract_item_id(item)
                     if item_id and item_id not in seen_ids:
                         seen_ids.add(item_id)
-                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+                        click.echo(format_output(item, config.output_format, config.limit, config.search, short=config.short))
     except KeyboardInterrupt:
         click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
@@ -2476,7 +2534,7 @@ def pre_computed_get(ctx, metric_id):
 
     try:
         result = client.get(url, solution="siem", subcommand="pre-computed-get")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -2508,7 +2566,7 @@ def pre_computed_results(ctx, metric_id, from_ts, to_ts, time_range):
 
     try:
         result = client.get(url, params=params or None, solution="siem", subcommand="pre-computed-results")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -2535,7 +2593,7 @@ def pre_computed_create(ctx, data_str, data_file):
 
     try:
         result = client.post(url, json=body, solution="siem", subcommand="pre-computed-create")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -2556,7 +2614,7 @@ def pre_computed_delete(ctx, metric_id):
 
     try:
         result = client.request("DELETE", url, solution="siem", subcommand="pre-computed-delete")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -2591,7 +2649,7 @@ def exports_list(ctx, auto_poll, interval):
         result = client.get(url, solution="siem", subcommand="exports-list")
 
         if not auto_poll:
-            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
         else:
             import time as _time
             seen_ids: set[str] = set()
@@ -2609,7 +2667,7 @@ def exports_list(ctx, auto_poll, interval):
                     item_id = _extract_item_id(item)
                     if item_id and item_id not in seen_ids:
                         seen_ids.add(item_id)
-                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+                        click.echo(format_output(item, config.output_format, config.limit, config.search, short=config.short))
     except KeyboardInterrupt:
         click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
@@ -2632,7 +2690,7 @@ def exports_get(ctx, export_id):
 
     try:
         result = client.get(url, solution="siem", subcommand="exports-get")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -2653,7 +2711,7 @@ def exports_delete(ctx, export_id):
     url = IDR_LOGS_BASE.format(region=config.region) + f"/exports/{export_id}"
     try:
         result = client.request("DELETE", url, solution="siem", subcommand="exports-delete")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -2688,7 +2746,7 @@ def notifications_list(ctx, auto_poll, interval):
         result = client.get(url, solution="siem", subcommand="notifications-list")
 
         if not auto_poll:
-            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
         else:
             import time as _time
             seen_ids: set[str] = set()
@@ -2706,7 +2764,7 @@ def notifications_list(ctx, auto_poll, interval):
                     item_id = _extract_item_id(item)
                     if item_id and item_id not in seen_ids:
                         seen_ids.add(item_id)
-                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+                        click.echo(format_output(item, config.output_format, config.limit, config.search, short=config.short))
     except KeyboardInterrupt:
         click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
@@ -2729,7 +2787,7 @@ def notifications_get(ctx, action_id):
 
     try:
         result = client.get(url, solution="siem", subcommand="notifications-get")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -2764,7 +2822,7 @@ def notif_targets_list(ctx, auto_poll, interval):
         result = client.get(url, solution="siem", subcommand="notif-targets-list")
 
         if not auto_poll:
-            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
         else:
             import time as _time
             seen_ids: set[str] = set()
@@ -2782,7 +2840,7 @@ def notif_targets_list(ctx, auto_poll, interval):
                     item_id = _extract_item_id(item)
                     if item_id and item_id not in seen_ids:
                         seen_ids.add(item_id)
-                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+                        click.echo(format_output(item, config.output_format, config.limit, config.search, short=config.short))
     except KeyboardInterrupt:
         click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
@@ -2805,7 +2863,7 @@ def notif_targets_get(ctx, target_id):
 
     try:
         result = client.get(url, solution="siem", subcommand="notif-targets-get")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -2838,7 +2896,157 @@ def log_usage(ctx, log_key, from_date, to_date):
 
     try:
         result = client.get(url, params=params or None, solution="siem", subcommand="log-usage")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
+    except R7Error as exc:
+        click.echo(str(exc), err=True)
+        sys.exit(exc.exit_code)
+
+# ---------------------------------------------------------------------------
+# siem agents
+# ---------------------------------------------------------------------------
+
+@siem.group("agents")
+@click.pass_context
+def agents(ctx):
+    """InsightIDR agent commands."""
+    pass
+
+
+@agents.command("list")
+@click.option("-l", "--limit", "agent_limit", type=int, default=10, help="Agents per page (default: 10).")
+@click.option("--all-pages", is_flag=True, help="Fetch all pages.")
+@click.option("-a", "--auto", "auto_poll", is_flag=True, help="Poll for new agents.")
+@click.option("-i", "--interval", type=int, default=30, help="Polling interval in seconds.")
+@click.option("--ngav-status", default=None, help="Filter by NGAV health: GOOD, POOR, N/A, Not Monitored.")
+@click.option("--velociraptor-status", default=None, type=click.Choice(["RUNNING", "NOT_RUNNING"]), help="Filter by velociraptor state.")
+@click.pass_context
+def agents_list(ctx, agent_limit, all_pages, auto_poll, interval, ngav_status, velociraptor_status):
+    """List agents with host info, NGAV status, and velociraptor state.
+
+    \b
+    Examples:
+      # List first 10 agents
+      r7-cli siem agents list
+
+    \b
+      # List 50 agents per page, all pages
+      r7-cli siem agents list -l 50 --all-pages
+
+    \b
+      # Filter by NGAV health
+      r7-cli siem agents list --ngav-status GOOD
+
+    \b
+      # Filter by velociraptor state
+      r7-cli siem agents list --velociraptor-status RUNNING
+
+    \b
+      # Poll for new agents every 30s
+      r7-cli siem agents list -a -i 30
+    """
+    config = _get_config(ctx)
+    client = R7Client(config)
+    gql_url = IDR_GQL.format(region=config.region)
+
+    try:
+        org_id = _resolve_org_id(client, config)
+        cursor = None
+        all_records: list[dict] = []
+
+        while True:
+            variables: dict[str, Any] = {"orgId": org_id, "first": agent_limit, "cursor": cursor}
+            result = client.post(
+                gql_url,
+                json={"query": GQL_AGENTS_LIST, "variables": variables},
+                solution="siem",
+                subcommand="agents-list",
+            )
+
+            # Check for GQL errors
+            errors = result.get("errors")
+            if errors:
+                raise APIError(errors[0].get("message", "Unknown GraphQL error"))
+
+            assets = (
+                result.get("data", {})
+                .get("organization", {})
+                .get("assets", {})
+            )
+            edges = assets.get("edges", [])
+            page_info = assets.get("pageInfo", {})
+
+            for edge in edges:
+                node = edge.get("node", {})
+                record = _flatten_agent_node(node)
+                all_records.append(record)
+
+            if all_pages and page_info.get("hasNextPage"):
+                cursor = page_info.get("endCursor")
+            else:
+                break
+
+        filtered = _apply_agent_filters(all_records, ngav_status, velociraptor_status)
+
+        if not auto_poll:
+            click.echo(format_output(filtered, config.output_format, config.limit, config.search, short=config.short))
+        else:
+            # Output initial batch
+            seen_ids: set[str] = set()
+            for rec in filtered:
+                aid = rec.get("agent_id")
+                if aid:
+                    seen_ids.add(aid)
+            click.echo(format_output(filtered, config.output_format, config.limit, config.search, short=config.short))
+            click.echo(f"Polling for new agents every {interval}s (Ctrl+C to stop)...", err=True)
+
+            while True:
+                time.sleep(interval)
+                cursor = None
+                poll_records: list[dict] = []
+
+                while True:
+                    variables = {"orgId": org_id, "first": agent_limit, "cursor": cursor}
+                    result = client.post(
+                        gql_url,
+                        json={"query": GQL_AGENTS_LIST, "variables": variables},
+                        solution="siem",
+                        subcommand="agents-list",
+                    )
+                    errors = result.get("errors")
+                    if errors:
+                        raise APIError(errors[0].get("message", "Unknown GraphQL error"))
+
+                    assets = (
+                        result.get("data", {})
+                        .get("organization", {})
+                        .get("assets", {})
+                    )
+                    edges = assets.get("edges", [])
+                    page_info = assets.get("pageInfo", {})
+
+                    for edge in edges:
+                        node = edge.get("node", {})
+                        record = _flatten_agent_node(node)
+                        poll_records.append(record)
+
+                    if all_pages and page_info.get("hasNextPage"):
+                        cursor = page_info.get("endCursor")
+                    else:
+                        break
+
+                poll_filtered = _apply_agent_filters(poll_records, ngav_status, velociraptor_status)
+                new_records = []
+                for rec in poll_filtered:
+                    aid = rec.get("agent_id")
+                    if aid and aid not in seen_ids:
+                        seen_ids.add(aid)
+                        new_records.append(rec)
+
+                if new_records:
+                    click.echo(format_output(new_records, config.output_format, config.limit, config.search, short=config.short))
+
+    except KeyboardInterrupt:
+        click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)

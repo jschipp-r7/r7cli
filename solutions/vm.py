@@ -108,13 +108,29 @@ def _download_parquet_urls(
     client: R7Client,
     urls: list[str],
     output_dir: str,
+    prefix: str | None = None,
+    timestamp: str | None = None,
 ) -> list[Path]:
-    """Download each URL to *output_dir* and return the list of saved paths."""
+    """Download each URL to *output_dir* and return the list of saved paths.
+
+    When *prefix* and *timestamp* are provided, files are named as
+    ``{prefix}.{timestamp}.parquet`` (or ``{prefix}.{timestamp}.{idx}.parquet``
+    for multi-URL entries) instead of using the raw S3 filename.
+    """
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
     saved: list[Path] = []
-    for url in urls:
-        filename = url.rsplit("/", 1)[-1].split("?")[0] or "export.parquet"
+    multi = len(urls) > 1
+    for idx, url in enumerate(urls):
+        if prefix and timestamp:
+            # Use short ISO 8601 timestamp for the filename
+            ts = _short_iso_timestamp(timestamp)
+            if multi:
+                filename = f"{prefix}.{ts}.{idx}.parquet"
+            else:
+                filename = f"{prefix}.{ts}.parquet"
+        else:
+            filename = url.rsplit("/", 1)[-1].split("?")[0] or "export.parquet"
         dest = out / filename
         # Use the underlying httpx client for raw download
         resp = client._http.get(url)
@@ -122,6 +138,18 @@ def _download_parquet_urls(
         click.echo(f"Downloaded {dest}", err=True)
         saved.append(dest)
     return saved
+
+
+def _short_iso_timestamp(ts: str) -> str:
+    """Convert a full ISO timestamp to short form for filenames.
+
+    E.g. ``2026-04-07T16:38:10.555Z`` → ``2026-04-07T16:38Z``
+    """
+    try:
+        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        return dt.strftime("%Y-%m-%dT%H:%MZ")
+    except (ValueError, AttributeError):
+        return ts
 
 
 def is_private_ip(ip_str: str) -> bool:
@@ -200,7 +228,7 @@ def _submit_export(
     try:
         result = client.post(gql_url, json=mutation_body, solution="vm", subcommand=f"export-{export_type}")
         # Extract job id from the response — the mutation name varies
-        data = result.get("data", {})
+        data = result.get("data") or {}
         for val in data.values():
             if isinstance(val, dict) and "id" in val:
                 job_id = val["id"]
@@ -235,7 +263,7 @@ def _submit_export(
         wait = True
 
     if not wait:
-        click.echo(format_output({"job_id": job_id}, config.output_format, config.limit, config.search))
+        click.echo(format_output({"job_id": job_id}, config.output_format, config.limit, config.search, short=config.short))
         return
 
     # Poll until terminal
@@ -247,22 +275,25 @@ def _submit_export(
         click.echo(f"Export {job_id} FAILED.", err=True)
         sys.exit(2)
 
-    click.echo(format_output(export, config.output_format, config.limit, config.search))
+    click.echo(format_output(export, config.output_format, config.limit, config.search, short=config.short))
 
     # Download if auto or output_dir
     if auto or output_dir:
         result_data = export.get("result", [])
-        # result is a list of {prefix, urls} objects — collect all URLs
-        all_urls: list[str] = []
+        export_ts = export.get("timestamp", "")
+        dest = output_dir or "."
         if isinstance(result_data, list):
             for entry in result_data:
                 if isinstance(entry, dict):
-                    all_urls.extend(entry.get("urls", []))
+                    entry_prefix = entry.get("prefix", "export")
+                    entry_urls = entry.get("urls", [])
+                    if entry_urls:
+                        _download_parquet_urls(client, entry_urls, dest, prefix=entry_prefix, timestamp=export_ts)
         elif isinstance(result_data, dict):
-            all_urls.extend(result_data.get("urls", []))
-        if all_urls:
-            dest = output_dir or "."
-            _download_parquet_urls(client, all_urls, dest)
+            entry_prefix = result_data.get("prefix", "export")
+            entry_urls = result_data.get("urls", [])
+            if entry_urls:
+                _download_parquet_urls(client, entry_urls, dest, prefix=entry_prefix, timestamp=export_ts)
 
 
 # ---------------------------------------------------------------------------
@@ -294,7 +325,7 @@ def health(ctx):
     url = INSIGHT_BASE.format(region=config.region) + "/vm/admin/health"
     try:
         result = client.get(url, solution="vm", subcommand="health")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
         status = result.get("status", "UNKNOWN")
         if status != "UP":
             sys.exit(2)
@@ -408,13 +439,13 @@ def assets_search(ctx, size, cursor, asset_filter, vuln_filter, all_pages, auto_
             all_items = _paginate_v4_post(client, config, url, params, body, "assets-list")
             if has_filters:
                 all_items = _filter_vm_assets(all_items, hostname=hostname, ip=ip, os_family=os_family, tag=tag, risk_score=risk_score, critical_vulns=critical_vulns)
-            click.echo(format_output(all_items, config.output_format, config.limit, config.search))
+            click.echo(format_output(all_items, config.output_format, config.limit, config.search, short=config.short))
             return
 
         result = client.post(url, json=body or None, params=params, solution="vm", subcommand="assets-list")
 
         if not auto_poll:
-            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
         else:
             seen_ids: set[str] = set()
             items = _extract_items(result)
@@ -431,7 +462,7 @@ def assets_search(ctx, size, cursor, asset_filter, vuln_filter, all_pages, auto_
                     item_id = _extract_item_id(item)
                     if item_id and item_id not in seen_ids:
                         seen_ids.add(item_id)
-                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+                        click.echo(format_output(item, config.output_format, config.limit, config.search, short=config.short))
     except KeyboardInterrupt:
         click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
@@ -502,7 +533,7 @@ def assets_get(ctx, asset_id, auto_select):
 
     try:
         result = client.get(url, solution="vm", subcommand="assets-get")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -593,14 +624,14 @@ def scans_list(ctx, days, scan_status, started, all_pages, auto_poll, interval):
             all_items = _paginate_v4(client, config, url, "scans-list")
             if has_filters:
                 all_items = _apply_filters(all_items)
-            click.echo(format_output(all_items, config.output_format, config.limit, config.search))
+            click.echo(format_output(all_items, config.output_format, config.limit, config.search, short=config.short))
             return
 
         result = client.get(url, solution="vm", subcommand="scans-list")
 
         if not auto_poll:
             if not has_filters:
-                click.echo(format_output(result, config.output_format, config.limit, config.search))
+                click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
                 return
             records = result.get("data", []) if isinstance(result, dict) else result
             records = _apply_filters(records)
@@ -609,7 +640,7 @@ def scans_list(ctx, days, scan_status, started, all_pages, auto_poll, interval):
                 result["data"] = records
             else:
                 result = records
-            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
         else:
             import time as _time
             seen_ids: set[str] = set()
@@ -627,7 +658,7 @@ def scans_list(ctx, days, scan_status, started, all_pages, auto_poll, interval):
                     item_id = _extract_item_id(item)
                     if item_id and item_id not in seen_ids:
                         seen_ids.add(item_id)
-                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+                        click.echo(format_output(item, config.output_format, config.limit, config.search, short=config.short))
     except KeyboardInterrupt:
         click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
@@ -662,7 +693,7 @@ def scans_get(ctx, scan_id, auto_select):
 
     try:
         result = client.get(url, solution="vm", subcommand="scans-get")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -696,7 +727,7 @@ def scans_start(ctx, data_str, data_file):
 
     try:
         result = client.post(url, json=body, solution="vm", subcommand="scans-start")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -729,7 +760,7 @@ def scans_stop(ctx, scan_id, auto_select):
 
     try:
         result = client.post(url, solution="vm", subcommand="scans-stop")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -781,14 +812,14 @@ def engines_list(ctx, unhealthy, all_pages, auto_poll, interval):
             all_items = _paginate_v4(client, config, url, "engines-list")
             if unhealthy:
                 all_items = [r for r in all_items if r.get("status") != "HEALTHY"]
-            click.echo(format_output(all_items, config.output_format, config.limit, config.search))
+            click.echo(format_output(all_items, config.output_format, config.limit, config.search, short=config.short))
             return
 
         result = client.get(url, solution="vm", subcommand="engines-list")
 
         if not auto_poll:
             if not unhealthy:
-                click.echo(format_output(result, config.output_format, config.limit, config.search))
+                click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
                 return
             # Apply client-side filter
             records = result.get("data", []) if isinstance(result, dict) else result
@@ -797,7 +828,7 @@ def engines_list(ctx, unhealthy, all_pages, auto_poll, interval):
                 result["data"] = records
             else:
                 result = records
-            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
         else:
             import time as _time
             seen_ids: set[str] = set()
@@ -815,7 +846,7 @@ def engines_list(ctx, unhealthy, all_pages, auto_poll, interval):
                     item_id = _extract_item_id(item)
                     if item_id and item_id not in seen_ids:
                         seen_ids.add(item_id)
-                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+                        click.echo(format_output(item, config.output_format, config.limit, config.search, short=config.short))
     except KeyboardInterrupt:
         click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
@@ -873,7 +904,7 @@ def engines_get(ctx, engine_id, auto_select):
 
     try:
         result = client.get(url, solution="vm", subcommand="engines-get")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -913,7 +944,7 @@ def engines_update_config(ctx, engine_id, data_str, data_file):
     url = IVM_V4_BASE.format(region=config.region) + f"/integration/scan/engine/{engine_id}/configuration"
     try:
         result = client.post(url, json=body, solution="vm", subcommand="engines-update-config")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -934,7 +965,7 @@ def engines_remove_config(ctx, engine_id):
     url = IVM_V4_BASE.format(region=config.region) + f"/integration/scan/engine/{engine_id}/configuration"
     try:
         result = client.request("DELETE", url, solution="vm", subcommand="engines-remove-config")
-        click.echo(format_output(result, config.output_format, config.limit, config.search))
+        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -1007,13 +1038,13 @@ def sites_list(ctx, size, cursor, all_pages, auto_poll, interval, site_name, sit
                 if site_type:
                     t_upper = site_type.upper()
                     all_items = [s for s in all_items if s.get("type", "").upper() == t_upper]
-            click.echo(format_output(all_items, config.output_format, config.limit, config.search))
+            click.echo(format_output(all_items, config.output_format, config.limit, config.search, short=config.short))
             return
 
         result = client.post(url, params=params, solution="vm", subcommand="sites-list")
 
         if not auto_poll:
-            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
         else:
             import time as _time
             seen_ids: set[str] = set()
@@ -1031,7 +1062,7 @@ def sites_list(ctx, size, cursor, all_pages, auto_poll, interval, site_name, sit
                     item_id = _extract_item_id(item)
                     if item_id and item_id not in seen_ids:
                         seen_ids.add(item_id)
-                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+                        click.echo(format_output(item, config.output_format, config.limit, config.search, short=config.short))
     except KeyboardInterrupt:
         click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
@@ -1237,13 +1268,13 @@ def vulns_search(ctx, size, cursor, asset_filter, vuln_filter, all_pages, auto_p
             all_items = _paginate_v4_post(client, config, url, params, body, "vulns-search")
             if has_filters:
                 all_items = _filter_vm_vulns(all_items, severity=severity, cvss_score=cvss_score, categories=categories, published=published, cve=cve)
-            click.echo(format_output(all_items, config.output_format, config.limit, config.search))
+            click.echo(format_output(all_items, config.output_format, config.limit, config.search, short=config.short))
             return
 
         result = client.post(url, json=body or None, params=params, solution="vm", subcommand="vulns-search")
 
         if not auto_poll:
-            click.echo(format_output(result, config.output_format, config.limit, config.search))
+            click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
         else:
             seen_ids: set[str] = set()
             items = _extract_items(result)
@@ -1260,7 +1291,7 @@ def vulns_search(ctx, size, cursor, asset_filter, vuln_filter, all_pages, auto_p
                     item_id = _extract_item_id(item)
                     if item_id and item_id not in seen_ids:
                         seen_ids.add(item_id)
-                        click.echo(format_output(item, config.output_format, config.limit, config.search))
+                        click.echo(format_output(item, config.output_format, config.limit, config.search, short=config.short))
     except KeyboardInterrupt:
         click.echo("\nStopped polling.", err=True)
     except R7Error as exc:
@@ -1275,7 +1306,7 @@ def vulns_search(ctx, size, cursor, asset_filter, vuln_filter, all_pages, auto_p
 @vm.group(cls=GlobalFlagHintGroup)
 @click.pass_context
 def export(ctx):
-    """IVM bulk export commands."""
+    """Download your entire data set via the command-line using the bulk export APIs. This is the most efficient option to get VM data out of the platform and must be used when working with large datasets."""
     pass
 
 
@@ -1285,7 +1316,7 @@ def export(ctx):
 @click.option("--output-dir", type=click.Path(), default=None, help="Directory to save downloaded files.")
 @click.pass_context
 def export_vulnerabilities(ctx, wait, auto, output_dir):
-    """Trigger a bulk vulnerability export.
+    """Download all the bulk data on vulnerabilities.
 
     \b
     Examples:
@@ -1319,7 +1350,7 @@ def export_vulnerabilities(ctx, wait, auto, output_dir):
 @click.option("--output-dir", type=click.Path(), default=None, help="Directory to save downloaded files.")
 @click.pass_context
 def export_policies(ctx, wait, auto, output_dir):
-    """Trigger a bulk policy export.
+    """Download all the bulk data on policies (scan engine + agent compliance checks).
 
     \b
     Examples:
@@ -1355,7 +1386,7 @@ def export_policies(ctx, wait, auto, output_dir):
 @click.option("--end-date", required=True, help="End date (YYYY-MM-DD).")
 @click.pass_context
 def export_remediations(ctx, wait, auto, output_dir, start_date, end_date):
-    """Trigger a bulk vulnerability remediation export.
+    """Download all the bulk data on remediations.
 
     \b
     Examples:
@@ -1484,7 +1515,7 @@ def job_status(ctx, job_id, do_poll, poll_interval):
             export = _poll_export(client, config, job_id, poll_interval)
             status = export.get("status", "")
             store.mark_terminal(job_id, status)
-            click.echo(format_output(export, config.output_format, config.limit, config.search))
+            click.echo(format_output(export, config.output_format, config.limit, config.search, short=config.short))
             if status == "FAILED":
                 sys.exit(2)
         else:
@@ -1498,7 +1529,7 @@ def job_status(ctx, job_id, do_poll, poll_interval):
             status = export.get("status", "")
             if status in ("SUCCEEDED", "FAILED"):
                 store.mark_terminal(job_id, status)
-            click.echo(format_output(export, config.output_format, config.limit, config.search))
+            click.echo(format_output(export, config.output_format, config.limit, config.search, short=config.short))
             if status == "FAILED":
                 sys.exit(2)
     except R7Error as exc:

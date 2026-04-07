@@ -29,6 +29,7 @@ class Config:
     limit: Optional[int]
     timeout: int  # seconds, default 30
     search: Optional[str]  # field name to search for in JSON responses
+    short: bool  # compact single-line output mode
 
 
 def resolve_config(
@@ -43,6 +44,7 @@ def resolve_config(
     limit: Optional[int] = None,
     timeout: int = 30,
     search: Optional[str] = None,
+    short: bool = False,
 ) -> Config:
     """Build a :class:`Config` by merging flags, env vars, and defaults.
 
@@ -80,4 +82,5 @@ def resolve_config(
         limit=limit,
         timeout=timeout,
         search=search,
+        short=short,
     )

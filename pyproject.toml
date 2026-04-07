@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "r7-cli"
+version = "0.1.0"
+description = "Rapid7 Insight Platform CLI"
+requires-python = ">=3.10"
+dependencies = [
+    "click>=8.0",
+    "httpx>=0.24",
+    "tabulate>=0.9",
+    "pyarrow>=14.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "hypothesis>=6.0",
+]
+
+[project.scripts]
+r7-cli = "r7cli.main:cli"
+
+[tool.setuptools]
+packages = ["r7cli", "r7cli.solutions"]
+
+[tool.setuptools.package-dir]
+r7cli = "."
+"r7cli.solutions" = "solutions"
