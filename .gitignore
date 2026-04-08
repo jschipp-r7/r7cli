@@ -2,3 +2,4 @@
 *.parquet
 *.pdf
 *.json
+__pycache__
