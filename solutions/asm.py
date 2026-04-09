@@ -53,24 +53,26 @@ def _query_cypher(item: dict) -> str:
 
 
 def _interactive_query_select(client: R7Client, config: Config) -> dict:
-    """Fetch queries, show numbered menu with name and id, return selected item."""
+    """Fetch queries, show interactive menu with name and id, return selected item."""
+    import questionary
+
     items = _fetch_queries(client, config)
     if not items:
         click.echo("No saved queries found.", err=True)
         sys.exit(1)
 
-    click.echo("Available queries:", err=True)
-    for idx, item in enumerate(items, 1):
+    choices = []
+    for item in items:
         name = _query_name(item)
         qid = _query_id(item)
-        click.echo(f"  {idx}. {name} | {qid}", err=True)
+        label = f"{name} ({qid})"
+        choices.append(questionary.Choice(title=label, value=item))
 
-    choice = click.prompt("Select a query number", type=int, err=True)
-    if choice < 1 or choice > len(items):
-        click.echo("Invalid selection.", err=True)
+    selected = questionary.select("Select a query:", choices=choices).ask()
+    if selected is None:
+        click.echo("No selection made.", err=True)
         sys.exit(1)
-
-    return items[choice - 1]
+    return selected
 
 
 # ---------------------------------------------------------------------------

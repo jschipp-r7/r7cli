@@ -98,25 +98,20 @@ query QuarantineState($cursor: String) {
 """
 
 GQL_AGENTS_LIST = """
-query AgentsList($orgId: String!, $first: Int!, $cursor: String) {
+query ListOfAssetsWithEndpointSecurity($orgId: String!, $first: Int!, $cursor: String) {
   organization(id: $orgId) {
     assets(first: $first, after: $cursor) {
-      pageInfo { endCursor hasNextPage }
       edges {
         node {
           agent {
-            id agentStatus
-            quarantineState { currentState }
-            beaconTime agentLastUpdateTime
+            id agentStatus agentSemanticVersion deployTime agentLastUpdateTime
           }
-          host {
-            hostNames { name }
-            primaryAddress { ip mac }
-            alternateAddresses { ip mac }
-          }
+          publicIpAddress
+          platform
         }
         cursor
       }
+      pageInfo { endCursor hasNextPage startCursor }
     }
   }
 }

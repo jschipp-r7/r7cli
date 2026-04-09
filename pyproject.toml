@@ -12,6 +12,7 @@ dependencies = [
     "httpx>=0.24",
     "tabulate>=0.9",
     "pyarrow>=14.0",
+    "questionary>=2.0",
 ]
 
 [project.optional-dependencies]

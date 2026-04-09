@@ -493,6 +493,7 @@ def assets_get(ctx, asset_id, auto_select):
         raise click.ClickException("Provide --id or use --auto to select interactively.")
 
     if auto_select:
+        import questionary
         # Fetch first page of assets for interactive selection
         url = IVM_V4_BASE.format(region=config.region) + "/integration/assets"
         result = client.post(url, json=None, params={"size": 30}, solution="vm", subcommand="assets-list")
@@ -500,31 +501,17 @@ def assets_get(ctx, asset_id, auto_select):
         if not isinstance(items, list) or not items:
             click.echo("No assets found.", err=True)
             sys.exit(1)
-        click.echo("Available assets:", err=True)
-        for idx, item in enumerate(items, 1):
+        choices = []
+        for item in items:
             hname = item.get("host_name", "")
             ip_addr = item.get("ip", "")
-            rscore = item.get("risk_score", 0)
-            os_t = item.get("os_type", "")
-            os_n = item.get("os_name", "")
-            aid = item.get("id", "?")
-            parts = []
-            if hname:
-                parts.append(hname)
-            if ip_addr:
-                parts.append(f"ip={ip_addr}")
-            parts.append(f"risk={rscore}")
-            if os_n:
-                parts.append(f"os={os_n}")
-            if os_t:
-                parts.append(f"type={os_t}")
-            parts.append(f"id={aid}")
-            click.echo(f"  {idx}. {' | '.join(parts)}", err=True)
-        choice = click.prompt("Select an asset number", type=int, err=True)
-        if choice < 1 or choice > len(items):
-            click.echo("Invalid selection.", err=True)
+            aid = str(item.get("id", "?"))
+            label = f"{hname} {ip_addr} ({aid})" if hname else aid
+            choices.append(questionary.Choice(title=label, value=aid))
+        asset_id = questionary.select("Select an asset:", choices=choices).ask()
+        if asset_id is None:
+            click.echo("No selection made.", err=True)
             sys.exit(1)
-        asset_id = str(items[choice - 1].get("id", ""))
 
     url = IVM_V4_BASE.format(region=config.region) + f"/integration/assets/{asset_id}"
 
@@ -872,6 +859,7 @@ def engines_get(ctx, engine_id, auto_select):
     if not engine_id and not auto_select:
         raise click.ClickException("Provide --id or use --auto to select interactively.")
     if auto_select:
+        import questionary
         # Fetch engines for interactive selection
         list_url = IVM_V4_BASE.format(region=config.region) + "/integration/scan/engine"
         result = client.get(list_url, solution="vm", subcommand="engines-list")
@@ -879,23 +867,17 @@ def engines_get(ctx, engine_id, auto_select):
         if not isinstance(items, list) or not items:
             click.echo("No scan engines found.", err=True)
             sys.exit(1)
-        click.echo("Available scan engines:", err=True)
-        for idx, item in enumerate(items, 1):
+        choices = []
+        for item in items:
             name = item.get("name", "")
             status = item.get("status", "")
-            eid = item.get("id", "?")
-            parts = []
-            if name:
-                parts.append(name)
-            if status:
-                parts.append(f"status={status}")
-            parts.append(f"id={eid}")
-            click.echo(f"  {idx}. {' | '.join(parts)}", err=True)
-        choice = click.prompt("Select an engine number", type=int, err=True)
-        if choice < 1 or choice > len(items):
-            click.echo("Invalid selection.", err=True)
+            eid = str(item.get("id", "?"))
+            label = f"{name} [{status}] ({eid})" if name else eid
+            choices.append(questionary.Choice(title=label, value=eid))
+        engine_id = questionary.select("Select a scan engine:", choices=choices).ask()
+        if engine_id is None:
+            click.echo("No selection made.", err=True)
             sys.exit(1)
-        engine_id = str(items[choice - 1].get("id", ""))
 
     url = IVM_V4_BASE.format(region=config.region) + f"/integration/scan/engine/{engine_id}"
 
@@ -1071,33 +1053,29 @@ def sites_list(ctx, size, cursor, all_pages, auto_poll, interval, site_name, sit
 
 
 def _interactive_select_vm_scan(client, config):
-    """Fetch scans and show interactive menu with status and dates."""
+    """Fetch scans and show interactive menu."""
+    import questionary
+
     url = IVM_V4_BASE.format(region=config.region) + "/integration/scan"
     result = client.get(url, solution="vm", subcommand="scans-list")
     items = result.get("data", result.get("resources", []))
     if not isinstance(items, list) or not items:
         click.echo("No scans found.", err=True)
         sys.exit(1)
-    click.echo("Available scans:", err=True)
-    for idx, item in enumerate(items, 1):
-        sid = item.get("id", "?")
+
+    choices = []
+    for item in items:
+        sid = str(item.get("id", "?"))
         status = item.get("status", "")
-        started = item.get("started", "")
-        finished = item.get("finished", "")
-        parts = []
-        if status:
-            parts.append(f"status={status}")
-        if started:
-            parts.append(f"started={started[:19]}")
-        if finished:
-            parts.append(f"finished={finished[:19]}")
-        parts.append(f"id={sid}")
-        click.echo(f"  {idx}. {' | '.join(parts)}", err=True)
-    choice = click.prompt("Select a scan number", type=int, err=True)
-    if choice < 1 or choice > len(items):
-        click.echo("Invalid selection.", err=True)
+        started = item.get("started", "")[:19] if item.get("started") else ""
+        label = f"{status} {started} ({sid})" if status else sid
+        choices.append(questionary.Choice(title=label, value=sid))
+
+    selected = questionary.select("Select a scan:", choices=choices).ask()
+    if selected is None:
+        click.echo("No selection made.", err=True)
         sys.exit(1)
-    return str(items[choice - 1].get("id", ""))
+    return selected
 
 
 # ---------------------------------------------------------------------------
@@ -1481,18 +1459,16 @@ def job_status(ctx, job_id, do_poll, poll_interval):
                     job_id = active[0].job_id
                     break
                 # Multiple active — present menu
-                click.echo("Multiple active jobs found:", err=True)
-                for idx, entry in enumerate(active, 1):
-                    parts = [entry.export_type]
-                    parts.append(f"id={entry.job_id}")
-                    parts.append(entry.created_at)
-                    click.echo(f"  {idx}. {' | '.join(parts)}", err=True)
-                choice = click.prompt("Select job number", type=int)
-                if 1 <= choice <= len(active):
-                    job_id = active[choice - 1].job_id
-                else:
-                    click.echo("Invalid selection.", err=True)
+                import questionary
+                choices = []
+                for entry in active:
+                    label = f"{entry.export_type} | {entry.created_at} ({entry.job_id})"
+                    choices.append(questionary.Choice(title=label, value=entry.job_id))
+                selected = questionary.select("Select a job:", choices=choices).ask()
+                if selected is None:
+                    click.echo("No selection made.", err=True)
                     sys.exit(1)
+                job_id = selected
                 break
 
         if not job_id:

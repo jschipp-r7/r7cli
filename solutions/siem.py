@@ -103,21 +103,15 @@ def _resolve_org_id(client: R7Client, config: Config) -> str:
 def _flatten_agent_node(node: dict) -> dict:
     """Convert a nested GQL agent node into a flat Agent_Record dict."""
     agent = node.get("agent") or {}
-    host = node.get("host") or {}
-    primary = host.get("primaryAddress") or {}
-    host_names = host.get("hostNames") or []
-    quarantine = agent.get("quarantineState") or {}
 
     return {
         "agent_id": agent.get("id"),
         "agent_status": agent.get("agentStatus"),
-        "quarantine_state": quarantine.get("currentState"),
-        "beacon_time": agent.get("beaconTime"),
+        "agent_semantic_version": agent.get("agentSemanticVersion"),
+        "deploy_time": agent.get("deployTime"),
         "agent_last_update": agent.get("agentLastUpdateTime"),
-        "host_names": ", ".join(h.get("name", "") for h in host_names),
-        "primary_ip": primary.get("ip"),
-        "primary_mac": primary.get("mac"),
-        "alternate_addresses": host.get("alternateAddresses"),
+        "public_ip": node.get("publicIpAddress"),
+        "platform": node.get("platform"),
     }
 
 
@@ -1216,7 +1210,9 @@ def users_get(ctx, rrn, auto_select):
 
 
 def _interactive_user_select(client: R7Client, config: Config, base: str) -> str:
-    """Fetch users, display a numbered menu, return the selected user RRN."""
+    """Fetch users, display an interactive menu, return the selected user RRN."""
+    import questionary
+
     url = f"{base}/users/_search"
     result = client.post(url, json={}, params={"size": 30}, solution="siem", subcommand="users-list")
 
@@ -1225,25 +1221,19 @@ def _interactive_user_select(client: R7Client, config: Config, base: str) -> str
         click.echo("No users found.", err=True)
         sys.exit(1)
 
-    click.echo("Available users:", err=True)
-    for idx, u in enumerate(items, 1):
+    choices = []
+    for u in items:
         name = u.get("name", "")
         domain = u.get("domain", "")
-        rrn = u.get("rrn", "?")
-        parts = []
-        if name:
-            parts.append(name)
-        if domain:
-            parts.append(f"domain={domain}")
-        parts.append(f"rrn={rrn}")
-        click.echo(f"  {idx}. {' | '.join(parts)}", err=True)
+        rrn = str(u.get("rrn", "?"))
+        label = f"{name} [{domain}] ({rrn})" if name else rrn
+        choices.append(questionary.Choice(title=label, value=rrn))
 
-    choice = click.prompt("Select a user number", type=int, err=True)
-    if choice < 1 or choice > len(items):
-        click.echo("Invalid selection.", err=True)
+    selected = questionary.select("Select a user:", choices=choices).ask()
+    if selected is None:
+        click.echo("No selection made.", err=True)
         sys.exit(1)
-
-    return str(items[choice - 1].get("rrn", ""))
+    return selected
 
 
 # ---------------------------------------------------------------------------
@@ -2053,33 +2043,29 @@ def variables_delete(ctx, variable_id):
 
 
 def _interactive_select_detection_rule(client, config, base):
-    """Fetch detection rules and show interactive menu with name, type, description."""
+    """Fetch detection rules and show interactive menu."""
+    import questionary
+
     url = f"{base}/management/tags"
     result = client.get(url, solution="siem", subcommand="detection-rules-list")
     items = result.get("tags", result.get("data", []))
     if not isinstance(items, list) or not items:
         click.echo("No detection rules found.", err=True)
         sys.exit(1)
-    click.echo("Available detection rules:", err=True)
-    for idx, item in enumerate(items, 1):
+
+    choices = []
+    for item in items:
         name = item.get("name", "")
         rtype = item.get("type", "")
-        desc = item.get("description", "") or ""
-        rid = item.get("id", "?")
-        parts = []
-        if name:
-            parts.append(name)
-        if rtype:
-            parts.append(f"type={rtype}")
-        if desc:
-            parts.append(desc[:50])
-        parts.append(f"id={rid}")
-        click.echo(f"  {idx}. {' | '.join(parts)}", err=True)
-    choice = click.prompt("Select a rule number", type=int, err=True)
-    if choice < 1 or choice > len(items):
-        click.echo("Invalid selection.", err=True)
+        rid = str(item.get("id", "?"))
+        label = f"{name} [{rtype}] ({rid})" if name else rid
+        choices.append(questionary.Choice(title=label, value=rid))
+
+    selected = questionary.select("Select a detection rule:", choices=choices).ask()
+    if selected is None:
+        click.echo("No selection made.", err=True)
         sys.exit(1)
-    return str(items[choice - 1].get("id", ""))
+    return selected
 
 
 # ---------------------------------------------------------------------------

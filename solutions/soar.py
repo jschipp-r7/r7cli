@@ -452,36 +452,29 @@ def jobs_cancel(ctx, job_id, auto_select):
 
 
 def _interactive_job_select(client: R7Client, config: Config, base: str) -> str:
-    """Fetch jobs, display a numbered menu, return the selected job ID."""
+    """Fetch jobs, display an interactive menu, return the selected job ID."""
+    import questionary
+
     url = f"{base}/jobs"
     result = client.get(url, params={"limit": 50}, solution="soar", subcommand="jobs-list")
 
-    # Find the list of job dicts in the response — the API may nest them
     jobs_list = _find_job_dicts(result)
     if not jobs_list:
         click.echo("No jobs found.", err=True)
         sys.exit(1)
 
-    click.echo("Available jobs:", err=True)
-    for idx, j in enumerate(jobs_list, 1):
+    choices = []
+    for j in jobs_list:
         name = j.get("name", j.get("workflow_name", ""))
-        desc = j.get("description", "")
-        jid = j.get("id", j.get("job_id", "?"))
-        parts = []
-        if name:
-            parts.append(name)
-        if desc:
-            parts.append(desc)
-        parts.append(f"id={jid}")
-        click.echo(f"  {idx}. {' | '.join(parts)}", err=True)
+        jid = str(j.get("id", j.get("job_id", "?")))
+        label = f"{name} ({jid})" if name else jid
+        choices.append(questionary.Choice(title=label, value=jid))
 
-    choice = click.prompt("Select a job number", type=int, err=True)
-    if choice < 1 or choice > len(jobs_list):
-        click.echo("Invalid selection.", err=True)
+    selected = questionary.select("Select a job:", choices=choices).ask()
+    if selected is None:
+        click.echo("No selection made.", err=True)
         sys.exit(1)
-
-    selected = jobs_list[choice - 1]
-    return str(selected.get("id", selected.get("job_id", "")))
+    return selected
 
 
 def _extract_item_id(item: dict) -> str:
@@ -708,7 +701,9 @@ def artifacts_entities(ctx, artifact_id, auto_select, limit_param, offset):
 
 
 def _interactive_artifact_select(client: R7Client, config: Config, base: str) -> str:
-    """Fetch artifacts, display a numbered menu, return the selected artifact ID."""
+    """Fetch artifacts, display an interactive menu, return the selected artifact ID."""
+    import questionary
+
     url = f"{base}/globalArtifacts"
     result = client.get(url, params={"limit": 50}, solution="soar", subcommand="artifacts-list")
 
@@ -717,33 +712,24 @@ def _interactive_artifact_select(client: R7Client, config: Config, base: str) ->
         click.echo("No artifacts found.", err=True)
         sys.exit(1)
 
-    click.echo("Available artifacts:", err=True)
-    for idx, a in enumerate(items, 1):
+    choices = []
+    for a in items:
         name = a.get("name", "")
-        desc = a.get("description", "")
-        aid = a.get("id", a.get("artifact_id", "?"))
-        parts = []
-        if name:
-            parts.append(name)
-        if desc:
-            parts.append(desc)
-        parts.append(f"id={aid}")
-        click.echo(f"  {idx}. {' | '.join(parts)}", err=True)
+        aid = str(a.get("id", a.get("artifact_id", "?")))
+        label = f"{name} ({aid})" if name else aid
+        choices.append(questionary.Choice(title=label, value=aid))
 
-    choice = click.prompt("Select an artifact number", type=int, err=True)
-    if choice < 1 or choice > len(items):
-        click.echo("Invalid selection.", err=True)
+    selected = questionary.select("Select an artifact:", choices=choices).ask()
+    if selected is None:
+        click.echo("No selection made.", err=True)
         sys.exit(1)
-
-    selected = items[choice - 1]
-    return str(selected.get("id", selected.get("artifact_id", "")))
+    return selected
 
 
 def _interactive_workflow_select(client: R7Client, config: Config, state_filter: str | None = None) -> str:
-    """Fetch workflows, display a numbered menu, return the selected workflow ID.
+    """Fetch workflows, display an interactive menu, return the selected workflow ID."""
+    import questionary
 
-    If *state_filter* is set (e.g. "active"), only workflows matching that state are shown.
-    """
     base = CONNECT_V2_BASE.format(region=config.region)
     url = f"{base}/workflows"
     params: dict = {"limit": 30}
@@ -751,7 +737,6 @@ def _interactive_workflow_select(client: R7Client, config: Config, state_filter:
         params["state"] = state_filter
     result = client.get(url, params=params, solution="soar", subcommand="workflows-list")
 
-    # Workflows are nested under data.workflows
     if isinstance(result, dict):
         items = result.get("data", {}).get("workflows", [])
         if not items:
@@ -765,33 +750,21 @@ def _interactive_workflow_select(client: R7Client, config: Config, state_filter:
         click.echo("No workflows found.", err=True)
         sys.exit(1)
 
-    click.echo("Available workflows:", err=True)
-    for idx, w in enumerate(items, 1):
-        # Get name from publishedVersion first, fall back to unpublishedVersion
+    choices = []
+    for w in items:
         pub = w.get("publishedVersion") or {}
         unpub = w.get("unpublishedVersion") or {}
         name = pub.get("name") or unpub.get("name") or ""
         state = w.get("state", "")
-        created_by = pub.get("createdByName") or unpub.get("createdByName") or ""
-        wid = w.get("workflowId", w.get("id", "?"))
+        wid = str(w.get("workflowId", w.get("id", "?")))
+        label = f"{name} [{state}] ({wid})" if name else wid
+        choices.append(questionary.Choice(title=label, value=wid))
 
-        parts = []
-        if name:
-            parts.append(name)
-        if state:
-            parts.append(f"state={state}")
-        if created_by:
-            parts.append(f"by={created_by}")
-        parts.append(f"id={wid}")
-        click.echo(f"  {idx}. {' | '.join(parts)}", err=True)
-
-    choice = click.prompt("Select a workflow number", type=int, err=True)
-    if choice < 1 or choice > len(items):
-        click.echo("Invalid selection.", err=True)
+    selected = questionary.select("Select a workflow:", choices=choices).ask()
+    if selected is None:
+        click.echo("No selection made.", err=True)
         sys.exit(1)
-
-    selected = items[choice - 1]
-    return str(selected.get("workflowId", selected.get("id", "")))
+    return selected
 
 
 # ---------------------------------------------------------------------------
