@@ -100,7 +100,11 @@ class R7Client:
 
         # -- verbose: log request -------------------------------------------
         if self.config.verbose:
-            self._log(f"{method} {url}")
+            if params:
+                from urllib.parse import urlencode
+                self._log(f"{method} {url}?{urlencode(params)}")
+            else:
+                self._log(f"{method} {url}")
 
         # -- debug: log request body ----------------------------------------
         if self.config.debug and json is not None:
