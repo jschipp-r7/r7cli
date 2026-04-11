@@ -770,7 +770,7 @@ def accounts_search(ctx, index, size, data_str, data_file):
 
 
 @accounts.command("get")
-@click.argument("rrn")
+@click.option("-j", "--id", "rrn", required=True, help="Account RRN.")
 @click.pass_context
 def accounts_get(ctx, rrn):
     """Get an IDR account by RRN."""
@@ -834,7 +834,7 @@ def idr_assets_search(ctx, index, size, data_str, data_file):
 
 
 @idr_assets.command("get")
-@click.argument("rrn")
+@click.option("-j", "--id", "rrn", required=True, help="Asset RRN.")
 @click.pass_context
 def idr_assets_get(ctx, rrn):
     """Get an IDR asset by RRN.
@@ -1275,7 +1275,7 @@ def threats_create(ctx, data_str, data_file):
 
 
 @threats.command("add-indicators")
-@click.argument("key")
+@click.option("-j", "--id", "key", required=True, help="Community threat key.")
 @click.option("--data", "data_str", default=None, help="JSON body with indicators.")
 @click.option("--data-file", type=click.Path(exists=True), default=None, help="Path to JSON file.")
 @click.pass_context
@@ -1303,7 +1303,7 @@ def threats_add_indicators(ctx, key, data_str, data_file):
 
 
 @threats.command("replace-indicators")
-@click.argument("key")
+@click.option("-j", "--id", "key", required=True, help="Community threat key.")
 @click.option("--data", "data_str", default=None, help="JSON body with indicators.")
 @click.option("--data-file", type=click.Path(exists=True), default=None, help="Path to JSON file.")
 @click.pass_context
@@ -1822,7 +1822,7 @@ def saved_queries_list(ctx, auto_poll, interval):
 
 
 @saved_queries.command("get")
-@click.argument("query_id")
+@click.option("-j", "--id", "query_id", required=True, help="Saved query ID.")
 @click.pass_context
 def saved_queries_get(ctx, query_id):
     """Get a saved query by ID."""
@@ -1870,7 +1870,7 @@ def saved_queries_create(ctx, data_str, data_file):
 
 
 @saved_queries.command("update")
-@click.argument("query_id")
+@click.option("-j", "--id", "query_id", required=True, help="Saved query ID.")
 @click.option("--data", "data_str", default=None, help="JSON body for saved query update.")
 @click.option("--data-file", type=click.Path(exists=True), default=None, help="Path to JSON file.")
 @click.pass_context
@@ -1898,7 +1898,7 @@ def saved_queries_update(ctx, query_id, data_str, data_file):
 
 
 @saved_queries.command("delete")
-@click.argument("query_id")
+@click.option("-j", "--id", "query_id", required=True, help="Saved query ID.")
 @click.pass_context
 def saved_queries_delete(ctx, query_id):
     """Delete a saved query."""
@@ -1974,7 +1974,7 @@ def variables_list(ctx, auto_poll, interval):
 
 
 @variables.command("get")
-@click.argument("variable_id")
+@click.option("-j", "--id", "variable_id", required=True, help="Variable ID.")
 @click.pass_context
 def variables_get(ctx, variable_id):
     """Get a LEQL variable by ID."""
@@ -2299,7 +2299,7 @@ def detection_rules_delete(ctx, rule_id, auto_select):
 # ---------------------------------------------------------------------------
 
 @logs.command("keys")
-@click.argument("log_id")
+@click.option("-j", "--id", "log_id", required=True, help="Log ID.")
 @click.pass_context
 def log_keys(ctx, log_id):
     """Get the most common keys for a log."""
@@ -2409,7 +2409,7 @@ def log_mgmt_list(ctx, auto_poll, interval, log_name, source_type, logset_name):
 
 
 @log_mgmt.command("get")
-@click.argument("log_id")
+@click.option("-j", "--id", "log_id", required=True, help="Log ID.")
 @click.pass_context
 def log_mgmt_get(ctx, log_id):
     """Get a log by ID."""
@@ -2430,7 +2430,7 @@ def log_mgmt_get(ctx, log_id):
 
 
 @log_mgmt.command("delete")
-@click.argument("log_id")
+@click.option("-j", "--id", "log_id", required=True, help="Log ID.")
 @click.pass_context
 def log_mgmt_delete(ctx, log_id):
     """Delete a log by ID."""
@@ -2506,7 +2506,7 @@ def pre_computed_list(ctx, auto_poll, interval):
 
 
 @pre_computed.command("get")
-@click.argument("metric_id")
+@click.option("-j", "--id", "metric_id", required=True, help="Pre-computed query ID.")
 @click.pass_context
 def pre_computed_get(ctx, metric_id):
     """Get a pre-computed query by ID."""
@@ -2527,7 +2527,7 @@ def pre_computed_get(ctx, metric_id):
 
 
 @pre_computed.command("results")
-@click.argument("metric_id")
+@click.option("-j", "--id", "metric_id", required=True, help="Pre-computed query ID.")
 @click.option("--from", "from_ts", default=None, help="Start timestamp (epoch ms).")
 @click.option("--to", "to_ts", default=None, help="End timestamp (epoch ms).")
 @click.option("--time-range", default=None, help="Time range (e.g. 'Last 7 days').")
@@ -2586,7 +2586,7 @@ def pre_computed_create(ctx, data_str, data_file):
 
 
 @pre_computed.command("delete")
-@click.argument("metric_id")
+@click.option("-j", "--id", "metric_id", required=True, help="Pre-computed query ID.")
 @click.pass_context
 def pre_computed_delete(ctx, metric_id):
     """Delete a pre-computed query."""
@@ -2662,7 +2662,7 @@ def exports_list(ctx, auto_poll, interval):
 
 
 @exports.command("get")
-@click.argument("export_id")
+@click.option("-j", "--id", "export_id", required=True, help="Export job ID.")
 @click.pass_context
 def exports_get(ctx, export_id):
     """Get an export job by ID."""
@@ -2759,7 +2759,7 @@ def notifications_list(ctx, auto_poll, interval):
 
 
 @notifications.command("get")
-@click.argument("action_id")
+@click.option("-j", "--id", "action_id", required=True, help="Notification action ID.")
 @click.pass_context
 def notifications_get(ctx, action_id):
     """Get a notification setting by ID."""
@@ -2835,7 +2835,7 @@ def notif_targets_list(ctx, auto_poll, interval):
 
 
 @notif_targets.command("get")
-@click.argument("target_id")
+@click.option("-j", "--id", "target_id", required=True, help="Notification target ID.")
 @click.pass_context
 def notif_targets_get(ctx, target_id):
     """Get a notification target by ID."""
@@ -2860,7 +2860,7 @@ def notif_targets_get(ctx, target_id):
 # ---------------------------------------------------------------------------
 
 @logs.command("usage")
-@click.argument("log_key")
+@click.option("-j", "--id", "log_key", required=True, help="Log key/ID.")
 @click.option("--from", "from_date", default=None, help="Start date (YYYY-MM-DD).")
 @click.option("--to", "to_date", default=None, help="End date (YYYY-MM-DD).")
 @click.pass_context

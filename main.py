@@ -28,7 +28,7 @@ class SolutionGroup(click.MultiCommand):
         if name == "validate":
             return _validate_cmd
         if name == "matrix":
-            from r7cli.security_checklist import matrix
+            from r7cli.matrix import matrix
             return matrix
         if name == "compliance":
             from r7cli.compliance import compliance
