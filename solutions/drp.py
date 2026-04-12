@@ -131,7 +131,8 @@ def _fetch_details(
 @click.pass_context
 def drp(ctx):
     """Digital Risk Protection commands."""
-    pass
+    from r7cli.main import _check_license
+    _check_license(ctx, "drp")
 
 
 # ---------------------------------------------------------------------------
@@ -242,6 +243,31 @@ def assets_list(ctx, auto_poll, interval):
 
 # ---------------------------------------------------------------------------
 # drp ioc-sources
+# ---------------------------------------------------------------------------
+
+@assets.command("count")
+@click.pass_context
+def drp_assets_count(ctx):
+    """Get the total count of DRP monitored assets.
+
+    \b
+    Examples:
+      r7-cli drp assets count
+    """
+    config = _get_config(ctx)
+    client = R7Client(config)
+    url = DRP_BASE + "/public/v2/data/assets"
+    auth = _drp_auth(config)
+
+    try:
+        result = client.get(url, auth=auth, solution="drp", subcommand="assets-count")
+        total = len(result) if isinstance(result, list) else 0
+        click.echo(format_output({"totalDRPAssets": total}, config.output_format, config.limit, config.search, short=config.short))
+    except R7Error as exc:
+        click.echo(str(exc), err=True)
+        sys.exit(exc.exit_code)
+
+
 # ---------------------------------------------------------------------------
 
 @drp.group("ioc-sources", cls=GlobalFlagHintGroup)

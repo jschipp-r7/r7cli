@@ -83,7 +83,8 @@ def _interactive_query_select(client: R7Client, config: Config) -> dict:
 @click.pass_context
 def asm(ctx):
     """Attack Surface Management / Surface Command commands."""
-    pass
+    from r7cli.main import _check_license
+    _check_license(ctx, "asm")
 
 
 # ---------------------------------------------------------------------------

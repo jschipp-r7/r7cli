@@ -89,7 +89,8 @@ def _base_url(config: Config) -> str:
 @click.pass_context
 def cnapp(ctx):
     """InsightCloudSec / CNAPP commands."""
-    pass
+    from r7cli.main import _check_license
+    _check_license(ctx, "cnapp")
 
 
 # ---------------------------------------------------------------------------

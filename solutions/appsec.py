@@ -449,7 +449,8 @@ def _fetch_all_pages_post(client, config, url, params, body, solution, subcomman
 @click.pass_context
 def appsec(ctx):
     """InsightAppSec commands."""
-    pass
+    from r7cli.main import _check_license
+    _check_license(ctx, "appsec")
 
 
 # ---------------------------------------------------------------------------
@@ -511,6 +512,30 @@ def apps_list(ctx, index, size, auto_poll, interval, all_pages):
                         click.echo(format_output(item, config.output_format, config.limit, config.search, short=config.short))
     except KeyboardInterrupt:
         click.echo("\nStopped polling.", err=True)
+    except R7Error as exc:
+        click.echo(str(exc), err=True)
+        sys.exit(exc.exit_code)
+
+
+@apps.command("count")
+@click.pass_context
+def apps_count(ctx):
+    """Get the total count of InsightAppSec applications.
+
+    \b
+    Examples:
+      r7-cli appsec apps count
+    """
+    config = _get_config(ctx)
+    client = R7Client(config)
+    url = IAS_V1_BASE.format(region=config.region) + "/apps"
+
+    try:
+        result = client.get(url, params={"size": 1}, solution="appsec", subcommand="apps-count")
+        total = 0
+        if isinstance(result, dict):
+            total = result.get("metadata", {}).get("total_data", 0)
+        click.echo(format_output({"totalAppsecApps": total}, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)

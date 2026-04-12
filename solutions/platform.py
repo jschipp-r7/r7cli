@@ -73,8 +73,22 @@ def _extract_item_id(item: dict) -> str:
 @click.group(cls=GlobalFlagHintGroup)
 @click.pass_context
 def platform(ctx):
-    """Platform-level commands (validate, search, users, orgs, credentials)."""
+    """Platform-level commands (validate, search, users, orgs, credentials, assets, extensions)."""
     pass
+
+
+# Register cross-cutting subcommands under platform
+def _register_platform_subgroups():
+    from r7cli.agents import agents as assets_group
+    from r7cli.extensions import extensions as extensions_group
+    from r7cli.compliance import compliance as compliance_cmd
+    from r7cli.matrix import matrix as matrix_group
+    platform.add_command(assets_group, "assets")
+    platform.add_command(extensions_group, "extensions")
+    platform.add_command(compliance_cmd, "compliance")
+    platform.add_command(matrix_group, "matrix")
+
+_register_platform_subgroups()
 
 
 @platform.command()

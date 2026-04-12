@@ -13,12 +13,94 @@ from r7cli.cli_group import GlobalFlagHintGroup, GLOBAL_FLAGS  # noqa: F401
 from r7cli.config import resolve_config
 from r7cli.models import VALID_SOLUTIONS, STUB_SOLUTIONS, R7Error
 
+# Solution name → required product codes (any match = licensed)
+_SOLUTION_LICENSE_MAP: dict[str, list[str]] = {
+    "vm":      ["IVM"],
+    "siem":    ["IDR", "OPS"],
+    "asm":     ["SC"],
+    "drp":     ["TC", "IH"],
+    "appsec":  ["AS"],
+    "cnapp":   ["ICS"],
+    "soar":    ["ICON"],
+}
+
+
+def _check_license(ctx: click.Context, solution: str) -> None:
+    """Check if the user is licensed for the given solution.
+
+    Makes a single API call to the products endpoint (cached in ctx.obj).
+    Exits with code 1 if the required license is not found.
+    Skips the check for help requests and offline commands.
+    """
+    # Skip if help is being requested
+    raw_args = sys.argv[1:] if hasattr(sys, 'argv') else []
+    if "-h" in raw_args or "--help" in raw_args or "help" in raw_args:
+        return
+
+    config = ctx.obj.get("config") if ctx.obj else None
+    if not config or not config.api_key:
+        return  # can't check without an API key
+
+    # Skip if cache mode is active (using cached data, no API needed)
+    if config.use_cache:
+        return
+
+    required_codes = _SOLUTION_LICENSE_MAP.get(solution)
+    if not required_codes:
+        return  # no license requirement (e.g. platform)
+
+    # Skip for offline subcommands (e.g. vm export list operates on local files)
+    _OFFLINE_SUBCOMMANDS = {"export list"}
+    remaining = " ".join(raw_args).lower()
+    for offline_cmd in _OFFLINE_SUBCOMMANDS:
+        if f"{solution} {offline_cmd}" in remaining:
+            return
+
+    # Cache the product codes in ctx.obj so we only call the API once
+    if "_licensed_codes" not in ctx.obj:
+        try:
+            from r7cli.client import R7Client
+            from r7cli.models import ACCOUNT_BASE
+            client = R7Client(config)
+            url = ACCOUNT_BASE.format(region=config.region) + "/products"
+            data = client.get(url, solution="platform", subcommand="license-check")
+            codes = set()
+            if isinstance(data, list):
+                for item in data:
+                    code = item.get("product_code", "")
+                    if code:
+                        codes.add(code)
+            ctx.obj["_licensed_codes"] = codes
+        except Exception:
+            ctx.obj["_licensed_codes"] = set()  # fail open on API error
+            return
+
+    licensed = ctx.obj["_licensed_codes"]
+    if not licensed:
+        return  # couldn't fetch licenses, fail open
+
+    if not any(code in licensed for code in required_codes):
+        # Map solution names to friendly product names
+        _FRIENDLY_NAMES = {
+            "vm": "InsightVM", "siem": "InsightIDR", "asm": "Surface Command",
+            "drp": "Digital Risk Protection", "appsec": "InsightAppSec",
+            "cnapp": "InsightCloudSec", "soar": "InsightConnect",
+        }
+        friendly = _FRIENDLY_NAMES.get(solution, solution)
+        click.echo(
+            f"Error: your organization is not licensed for {friendly}. "
+            f"This command requires one of the following product licenses: {', '.join(required_codes)}.\n"
+            f"Check your licensed products with: r7-cli platform products list",
+            err=True,
+        )
+        sys.exit(1)
+
 
 class SolutionGroup(click.MultiCommand):
     """Dynamic multi-command that routes to per-solution Click groups."""
 
     def list_commands(self, ctx: click.Context) -> list[str]:
-        return sorted(VALID_SOLUTIONS | {"validate", "matrix", "compliance", "agents", "extensions"})
+        return sorted(VALID_SOLUTIONS | {"validate"})
 
     def get_command(self, ctx: click.Context, name: str) -> click.Command | None:
         if name == "help":
@@ -27,21 +109,13 @@ class SolutionGroup(click.MultiCommand):
             return None
         if name == "validate":
             return _validate_cmd
-        if name == "matrix":
-            from r7cli.matrix import matrix
-            return matrix
-        if name == "compliance":
-            from r7cli.compliance import compliance
-            return compliance
-        if name == "agents":
-            from r7cli.agents import agents
-            return agents
-        if name == "extensions":
-            from r7cli.extensions import extensions
-            return extensions
         if name in STUB_SOLUTIONS:
             from r7cli.solutions.stub import create_stub_group
             return create_stub_group(name)
+
+        # Check license for solution commands (deferred — runs in group callback)
+        # The actual check happens in each solution group's invoke via _check_license
+
         if name == "soar":
             from r7cli.solutions.soar import soar
             return soar
@@ -76,7 +150,7 @@ CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"]}
 @click.option("-r", "--region", default=None, help="Region code (default: us).")
 @click.option("-v", "--verbose", is_flag=True, help="Log request/response info to stderr.")
 @click.option("-k", "--api-key", default=None, help="Insight Platform API key.")
-@click.option("-o", "--output", "output_format", default="json", help="Output format: json, table, csv.")
+@click.option("-o", "--output", "output_format", default="json", help="Output format: json, table, csv, tsv.")
 @click.option("-c", "--cache", "use_cache", is_flag=True, help="Return last response from local cache (resp are saved), for faster testing.")
 @click.option("-l", "--limit", type=int, default=None, help="Limit the output of the largest array.")
 @click.option("--debug", is_flag=True, help="Log full request/response bodies to stderr.")

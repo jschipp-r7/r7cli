@@ -173,7 +173,8 @@ def _ms_to_human(ms: int) -> str:
 @click.pass_context
 def siem(ctx):
     """InsightIDR / SIEM commands."""
-    pass
+    from r7cli.main import _check_license
+    _check_license(ctx, "siem")
 
 
 # Parent groups for reorganized commands
@@ -2899,15 +2900,13 @@ def agents(ctx):
 
 
 @agents.command("list")
-@click.option("-l", "--limit", "agent_limit", type=int, default=10, help="Agents per page (default: 10).")
+@click.option("--size", "agent_limit", type=int, default=10, help="Agents per page (default: 10, max: 10000).")
 @click.option("--all-pages", is_flag=True, help="Fetch all pages.")
 @click.option("-a", "--auto", "auto_poll", is_flag=True, help="Poll for new agents.")
 @click.option("-i", "--interval", type=int, default=30, help="Polling interval in seconds.")
-@click.option("--ngav-status", default=None, help="Filter by NGAV health: GOOD, POOR, N/A, Not Monitored.")
-@click.option("--velociraptor-status", default=None, type=click.Choice(["RUNNING", "NOT_RUNNING"]), help="Filter by velociraptor state.")
 @click.pass_context
-def agents_list(ctx, agent_limit, all_pages, auto_poll, interval, ngav_status, velociraptor_status):
-    """List agents with host info, NGAV status, and velociraptor state.
+def agents_list(ctx, agent_limit, all_pages, auto_poll, interval):
+    """List agents with host info.
 
     \b
     Examples:
@@ -2917,14 +2916,6 @@ def agents_list(ctx, agent_limit, all_pages, auto_poll, interval, ngav_status, v
     \b
       # List 50 agents per page, all pages
       r7-cli siem agents list -l 50 --all-pages
-
-    \b
-      # Filter by NGAV health
-      r7-cli siem agents list --ngav-status GOOD
-
-    \b
-      # Filter by velociraptor state
-      r7-cli siem agents list --velociraptor-status RUNNING
 
     \b
       # Poll for new agents every 30s
@@ -2971,7 +2962,7 @@ def agents_list(ctx, agent_limit, all_pages, auto_poll, interval, ngav_status, v
             else:
                 break
 
-        filtered = _apply_agent_filters(all_records, ngav_status, velociraptor_status)
+        filtered = all_records
 
         if not auto_poll:
             click.echo(format_output(filtered, config.output_format, config.limit, config.search, short=config.short))
@@ -3020,7 +3011,7 @@ def agents_list(ctx, agent_limit, all_pages, auto_poll, interval, ngav_status, v
                     else:
                         break
 
-                poll_filtered = _apply_agent_filters(poll_records, ngav_status, velociraptor_status)
+                poll_filtered = poll_records
                 new_records = []
                 for rec in poll_filtered:
                     aid = rec.get("agent_id")
@@ -3033,6 +3024,37 @@ def agents_list(ctx, agent_limit, all_pages, auto_poll, interval, ngav_status, v
 
     except KeyboardInterrupt:
         click.echo("\nStopped polling.", err=True)
+    except R7Error as exc:
+        click.echo(str(exc), err=True)
+        sys.exit(exc.exit_code)
+
+
+@agents.command("count")
+@click.pass_context
+def agents_count(ctx):
+    """Get the total count of InsightIDR agents.
+
+    \b
+    Examples:
+      r7-cli siem agents count
+    """
+    config = _get_config(ctx)
+    client = R7Client(config)
+    base = IDR_V1_BASE.format(region=config.region)
+    url = f"{base}/health-metrics"
+
+    try:
+        result = client.get(url, solution="siem", subcommand="agents-count")
+        total = 0
+        data_list = result.get("data", []) if isinstance(result, dict) else result if isinstance(result, list) else []
+        for entry in data_list:
+            if not isinstance(entry, dict):
+                continue
+            rrn = entry.get("rrn", "")
+            if "status:summary" in str(rrn):
+                total = entry.get("total", 0)
+                break
+        click.echo(format_output({"totalSIEMAgents": total}, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)

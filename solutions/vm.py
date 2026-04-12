@@ -123,12 +123,14 @@ def _download_parquet_urls(
     multi = len(urls) > 1
     for idx, url in enumerate(urls):
         if prefix and timestamp:
+            # Flatten prefix: replace / with _ to avoid subdirectories
+            flat_prefix = prefix.replace("/", "_")
             # Use short ISO 8601 timestamp for the filename
             ts = _short_iso_timestamp(timestamp)
             if multi:
-                filename = f"{prefix}.{ts}.{idx}.parquet"
+                filename = f"{flat_prefix}.{ts}.{idx}.parquet"
             else:
-                filename = f"{prefix}.{ts}.parquet"
+                filename = f"{flat_prefix}.{ts}.parquet"
         else:
             filename = url.rsplit("/", 1)[-1].split("?")[0] or "export.parquet"
         dest = out / filename
@@ -304,7 +306,8 @@ def _submit_export(
 @click.pass_context
 def vm(ctx):
     """InsightVM commands (health, scans, engines, exports, job status)."""
-    pass
+    from r7cli.main import _check_license
+    _check_license(ctx, "vm")
 
 
 # ---------------------------------------------------------------------------
@@ -370,8 +373,9 @@ def assets(ctx):
 @click.option("--tag", default=None, help="Filter by tag name (substring match).")
 @click.option("--risk-score", default=None, help="Filter by risk_score (e.g. '>=10000', '>0').")
 @click.option("--critical-vulns", default=None, help="Filter by critical_vulnerabilities count (e.g. '>=1', '>10').")
+@click.option("--force", is_flag=True, help="Force fetching all pages even for large datasets (>10k assets).")
 @click.pass_context
-def assets_search(ctx, size, cursor, asset_filter, vuln_filter, all_pages, auto_poll, interval, hostname, ip, os_family, tag, risk_score, critical_vulns):
+def assets_search(ctx, size, cursor, asset_filter, vuln_filter, all_pages, auto_poll, interval, hostname, ip, os_family, tag, risk_score, critical_vulns, force):
     """List assets (POST /v4/integration/assets).
 
     \b
@@ -436,6 +440,29 @@ def assets_search(ctx, size, cursor, asset_filter, vuln_filter, all_pages, auto_
 
     try:
         if all_pages or has_filters:
+            # Check total asset count before fetching all pages
+            if all_pages and not force:
+                count_result = client.post(url, json=body or None, params={"size": 1}, solution="vm", subcommand="assets-count")
+                total = 0
+                if isinstance(count_result, dict):
+                    total = count_result.get("metadata", {}).get("totalResources", 0)
+                if total > 10000:
+                    click.echo(
+                        f"Your organization has {total:,} assets. For datasets over 10,000 assets, "
+                        f"we recommend using the more efficient bulk export APIs:\n\n"
+                        f"  r7-cli vm export vulnerabilities --auto\n\n"
+                        f"Then use 'r7-cli vm export list' to filter the downloaded data locally.\n\n"
+                        f"To proceed anyway, use --force. If you do, consider using -c/--cache on "
+                        f"subsequent commands to filter the cached data instead of re-fetching.",
+                        err=True,
+                    )
+                    sys.exit(0)
+                elif total > 3000:
+                    click.echo(
+                        f"Fetching {total:,} assets — this may take a few minutes.",
+                        err=True,
+                    )
+
             all_items = _paginate_v4_post(client, config, url, params, body, "assets-list")
             if has_filters:
                 all_items = _filter_vm_assets(all_items, hostname=hostname, ip=ip, os_family=os_family, tag=tag, risk_score=risk_score, critical_vulns=critical_vulns)
@@ -465,6 +492,31 @@ def assets_search(ctx, size, cursor, asset_filter, vuln_filter, all_pages, auto_
                         click.echo(format_output(item, config.output_format, config.limit, config.search, short=config.short))
     except KeyboardInterrupt:
         click.echo("\nStopped polling.", err=True)
+    except R7Error as exc:
+        click.echo(str(exc), err=True)
+        sys.exit(exc.exit_code)
+
+
+@assets.command("count")
+@click.pass_context
+def assets_count(ctx):
+    """Get the total count of IVM assets.
+
+    \b
+    Examples:
+      r7-cli vm assets count
+    """
+    config = _get_config(ctx)
+    client = R7Client(config)
+    url = IVM_V4_BASE.format(region=config.region) + "/integration/assets"
+
+    try:
+        result = client.post(url, json=None, params={"size": 1}, solution="vm", subcommand="assets-count")
+        total = 0
+        if isinstance(result, dict):
+            metadata = result.get("metadata", {})
+            total = metadata.get("totalResources", 0)
+        click.echo(format_output({"totalAssets": total}, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
@@ -1356,36 +1408,46 @@ def export_policies(ctx, wait, auto, output_dir):
         sys.exit(exc.exit_code)
 
 
-@export.command("remediations")
-@click.option("-w", "--wait", is_flag=True, help="Poll until export completes.")
-@click.option("-a", "--auto", is_flag=True, help="Wait and auto-download Parquet files.")
-@click.option("--output-dir", type=click.Path(), default=None, help="Directory to save downloaded files.")
-@click.option("--start-date", required=True, help="Start date (YYYY-MM-DD).")
-@click.option("--end-date", required=True, help="End date (YYYY-MM-DD).")
-@click.pass_context
-def export_remediations(ctx, wait, auto, output_dir, start_date, end_date):
-    """Download all the bulk data on remediations.
+def _parse_month(value: str) -> int:
+    """Return month number (1-12) from short or long name, case-insensitive."""
+    import calendar
+    val = value.strip().lower()
+    for i in range(1, 13):
+        if val in (calendar.month_name[i].lower(), calendar.month_abbr[i].lower()):
+            return i
+    raise click.BadParameter(f"Unknown month: {value}")
 
-    \b
-    Examples:
-      # Export remediations and wait
-      r7-cli vm export remediations --wait
 
-    \b
-      # Export with date range
-      r7-cli vm export remediations --wait --start-date 2025-01-01 --end-date 2025-06-01
+def _month_date_range(month: int, year: int) -> tuple[str, str]:
+    """Return (start_date, end_date) strings for the given month/year."""
+    import calendar
+    last_day = calendar.monthrange(year, month)[1]
+    start = f"{year}-{month:02d}-01"
+    end = f"{year}-{month:02d}-{last_day:02d}"
+    return start, end
 
-    \b
-      # Export with interactive download
-      r7-cli vm export remediations --wait --auto --output-dir ./remediation-data
-    """
-    # Validate date order
-    if start_date > end_date:
-        click.echo(f"Error: --start-date ({start_date}) must be <= --end-date ({end_date}).", err=True)
-        sys.exit(1)
 
-    config = _get_config(ctx)
-    client = R7Client(config)
+# Earliest month the API has data for
+_REMEDIATION_DATA_ORIGIN = (2025, 8)  # August 2025
+
+
+def _generate_month_ranges(start_year: int, start_month: int,
+                           end_year: int, end_month: int) -> list[tuple[str, str]]:
+    """Generate a list of (start_date, end_date) pairs for each month in the range."""
+    ranges: list[tuple[str, str]] = []
+    y, m = start_year, start_month
+    while (y, m) <= (end_year, end_month):
+        ranges.append(_month_date_range(m, y))
+        m += 1
+        if m > 12:
+            m = 1
+            y += 1
+    return ranges
+
+
+def _submit_remediation_export(client, config, start_date, end_date, *,
+                               wait, auto, output_dir):
+    """Build and submit a single remediation export for the given date range."""
     mutation = {
         "query": (
             "mutation CreateVulnerabilityRemediationExport("
@@ -1399,18 +1461,579 @@ def export_remediations(ctx, wait, auto, output_dir, start_date, end_date):
             }
         },
     }
+    _submit_export(client, config, mutation, "remediations",
+                   wait=wait, auto=auto, output_dir=output_dir)
+
+
+@export.command("remediations")
+@click.option("-w", "--wait", is_flag=True, help="Poll until export completes.")
+@click.option("-a", "--auto", is_flag=True, help="Wait and auto-download Parquet files.")
+@click.option("--output-dir", type=click.Path(), default=None, help="Directory to save downloaded files.")
+@click.option("--start-date", default=None, help="Start date (YYYY-MM-DD). Defaults to 31 days ago.")
+@click.option("--end-date", default=None, help="End date (YYYY-MM-DD). Defaults to today.")
+@click.option("-m", "--month", "month_name", default=None, help="Month name (e.g. feb, february). Sets date range to that month.")
+@click.option("-y", "--year", "year", default=None, type=int, help="Year (e.g. 2025). Used with --month or --all-pages.")
+@click.option("--all-pages", is_flag=True, help="Fetch all months from Aug 2025 to now (or the given --year).")
+@click.pass_context
+def export_remediations(ctx, wait, auto, output_dir, start_date, end_date, month_name, year, all_pages):
+    """Download all the bulk data on remediations.
+
+    \b
+    API Limitations:
+      - Earliest supported date: August 1, 2025
+      - Maximum date range per request: 31 days
+      - Use --month, --year, or --all-pages to fetch larger periods
+
+    \b
+    If no dates are specified, downloads the last 31 days by default.
+    Use --month to target a specific month, optionally with --year.
+    Use --all-pages to iterate over every month from August 2025 to now.
+
+    \b
+    Examples:
+      # Last 31 days (default)
+      r7-cli vm export remediations --auto
+
+    \b
+      # Specific month (current year)
+      r7-cli vm export remediations --auto -m march
+
+    \b
+      # Specific month and year
+      r7-cli vm export remediations --auto -m feb -y 2026
+
+    \b
+      # All available data since Aug 2025
+      r7-cli vm export remediations --auto --all-pages
+
+    \b
+      # All months for a specific year
+      r7-cli vm export remediations --auto --all-pages -y 2026
+
+    \b
+      # Explicit date range (max 31 days)
+      r7-cli vm export remediations --auto --start-date 2025-09-01 --end-date 2025-09-30
+    """
+    today = datetime.now(timezone.utc).date()
+
+    # --month / --year validation
+    if month_name and (start_date or end_date):
+        click.echo("Error: --month cannot be combined with --start-date/--end-date.", err=True)
+        sys.exit(1)
+    if year and not month_name and not all_pages:
+        click.echo("Error: --year requires --month or --all-pages.", err=True)
+        sys.exit(1)
+    if all_pages and (start_date or end_date):
+        click.echo("Error: --all-pages cannot be combined with --start-date/--end-date.", err=True)
+        sys.exit(1)
+    if all_pages and month_name:
+        click.echo("Error: --all-pages cannot be combined with --month.", err=True)
+        sys.exit(1)
+
+    config = _get_config(ctx)
+    client = R7Client(config)
+
+    # --- all-pages mode: iterate month by month ---
+    if all_pages:
+        origin_y, origin_m = _REMEDIATION_DATA_ORIGIN
+        if year:
+            # Only pull months for the given year
+            start_y, start_m = year, 1
+            if year < origin_y or (year == origin_y and 1 < origin_m):
+                start_y, start_m = origin_y, origin_m
+            end_y, end_m = year, today.month if year == today.year else 12
+        else:
+            start_y, start_m = origin_y, origin_m
+            end_y, end_m = today.year, today.month
+
+        ranges = _generate_month_ranges(start_y, start_m, end_y, end_m)
+        click.echo(f"Fetching {len(ranges)} month(s) of remediation data …", err=True)
+        for sd, ed in ranges:
+            # Clamp end date to today if in the future
+            if ed > today.isoformat():
+                ed = today.isoformat()
+            click.echo(f"\n— {sd} → {ed}", err=True)
+            try:
+                _submit_remediation_export(client, config, sd, ed,
+                                           wait=wait, auto=auto, output_dir=output_dir)
+            except R7Error as exc:
+                click.echo(str(exc), err=True)
+        return
+
+    # --- single-range mode ---
+    if month_name:
+        month_num = _parse_month(month_name)
+        yr = year or today.year
+        start_date, end_date = _month_date_range(month_num, yr)
+    elif not start_date and not end_date:
+        # Default: last 31 days
+        end_date = today.isoformat()
+        start_date = (today - timedelta(days=31)).isoformat()
+        click.echo(
+            f"Using default date range: {start_date} → {end_date} (last 31 days). "
+            f"Use --month, --year, or --all-pages for more data.",
+            err=True,
+        )
+    elif not start_date or not end_date:
+        click.echo("Error: provide both --start-date and --end-date, or neither.", err=True)
+        sys.exit(1)
+
+    # Validate: earliest supported date
+    _EARLIEST_DATE = "2025-08-01"
+    if start_date < _EARLIEST_DATE:
+        click.echo(
+            f"Error: the earliest supported date by the API is August 1, 2025. "
+            f"Got --start-date {start_date}.",
+            err=True,
+        )
+        sys.exit(1)
+    if end_date < _EARLIEST_DATE:
+        click.echo(
+            f"Error: the earliest supported date by the API is August 1, 2025. "
+            f"Got --end-date {end_date}.",
+            err=True,
+        )
+        sys.exit(1)
+
+    if start_date > end_date:
+        click.echo(f"Error: --start-date ({start_date}) must be <= --end-date ({end_date}).", err=True)
+        sys.exit(1)
+
+    # Validate: max 31 days per request
+    from datetime import date as _date
     try:
-        _submit_export(client, config, mutation, "remediations",
-                       wait=wait, auto=auto, output_dir=output_dir)
+        sd = _date.fromisoformat(start_date)
+        ed = _date.fromisoformat(end_date)
+        if (ed - sd).days > 31:
+            click.echo(
+                f"Error: the API limits the date range to no more than 31 days per request. "
+                f"Your range is {(ed - sd).days} days ({start_date} → {end_date}). "
+                f"Use --month or --all-pages to fetch larger periods.",
+                err=True,
+            )
+            sys.exit(1)
+    except ValueError:
+        pass  # date parsing errors handled elsewhere
+
+    try:
+        _submit_remediation_export(client, config, start_date, end_date,
+                                   wait=wait, auto=auto, output_dir=output_dir)
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
 
 
 # ---------------------------------------------------------------------------
+# vm export list
+# ---------------------------------------------------------------------------
+
+@export.command("list")
+@click.option("--files", "file_pattern", default=None, help="File path(s) or glob pattern for Parquet files (e.g. '*.parquet').")
+@click.option("--hostname", default=None, help="Filter by hostname (substring match).")
+@click.option("--ip", default=None, help="Filter by IP address (substring match).")
+@click.option("--os-family", default=None, help="Filter by OS family (substring match).")
+@click.option("--severity", default=None, help="Filter by severity (substring match).")
+@click.option("--cvss-score", default=None, help="Filter by CVSS score (e.g. '>=9.0').")
+@click.option("--risk-score", default=None, help="Filter by risk score (e.g. '>=10000').")
+@click.option("--has-exploits", default=None, help="Filter by exploit availability (true/false).")
+@click.option("--first-found", default=None, help="Filter by first-found date (e.g. '>=2025-01-01').")
+@click.option("--status", "status_filter", default=None, help="Filter by finalStatus (substring or glob, e.g. '*PASS*').")
+@click.option("--benchmark-title", default=None, help="Filter by benchmarkTitle (substring or glob, e.g. '*Red Hat*').")
+@click.option("--profile-title", default=None, help="Filter by profileTitle (substring or glob, e.g. '*Level 1*').")
+@click.option("--publisher", default=None, help="Filter by publisher (substring or glob, e.g. 'CIS').")
+@click.option("--rule-title", default=None, help="Filter by ruleTitle (substring or glob, e.g. '*wireless*').")
+@click.option("--benchmark-version", default=None, help="Filter by benchmarkVersion (substring or glob).")
+@click.option("--where", "where_clauses", multiple=True, help="Generic filter: 'column op value'.")
+@click.option("--only", "only_columns", default=None, help="Only show these columns (comma-separated, e.g. 'ruleTitle,publisher').")
+@click.pass_context
+def export_list(ctx, file_pattern, hostname, ip, os_family, severity, cvss_score,
+                risk_score, has_exploits, first_found, status_filter,
+                benchmark_title, profile_title, publisher, rule_title,
+                benchmark_version, where_clauses, only_columns):
+    """Query and filter locally downloaded Parquet export files.
+
+    Reads Parquet files from disk, auto-detects their schema, optionally
+    joins asset data for cross-table filtering, and outputs results in
+    JSON, table, or CSV format.  No API key or network required.
+
+    \b
+    Examples:
+      # List all rows from cached Parquet files
+      r7-cli -c vm export list
+
+    \b
+      # Filter by CVSS score
+      r7-cli vm export list --files 'asset_vulnerability.*.parquet' --cvss-score '>=9.0'
+
+    \b
+      # Filter by hostname across joined data
+      r7-cli -c vm export list --hostname web --severity Critical
+
+    \b
+      # Generic where filter
+      r7-cli -c vm export list --where 'severity == Critical'
+
+    \b
+      # Filter policy data by rule title (glob pattern)
+      r7-cli vm export list --files 'asset_policy.*.parquet' --rule-title '*wireless*'
+
+    \b
+      # Filter by benchmark and publisher
+      r7-cli vm export list --files 'asset_policy.*.parquet' --publisher CIS --benchmark-title '*Red Hat*'
+    """
+    from r7cli.parquet_filter import (
+        resolve_files,
+        detect_schema,
+        read_parquet_files,
+        auto_join,
+        apply_filters,
+        apply_where,
+        SCHEMA_ASSET,
+        SCHEMA_POLICY,
+    )
+
+    config = _get_config(ctx)
+
+    # 1. Resolve files
+    paths = resolve_files(config.use_cache, file_pattern)
+
+    if config.verbose:
+        click.echo(f"Searching through the following {len(paths)} file(s):", err=True)
+        for p in paths:
+            click.echo(f"  {p.resolve()}", err=True)
+
+    # 2. Group files by schema
+    schema_groups: dict[str, list] = {}
+    skipped_files: list[tuple[Path, str | None]] = []
+    for p in paths:
+        s = detect_schema(p)
+        if s is not None:
+            schema_groups.setdefault(s, []).append(p)
+        else:
+            skipped_files.append((p, None))
+
+    # Use only the most recent file per schema (sorted by name, last = newest)
+    for schema_name in schema_groups:
+        all_files = sorted(schema_groups[schema_name])
+        schema_groups[schema_name] = [all_files[-1]]
+        if config.verbose and len(all_files) > 1:
+            for older in all_files[:-1]:
+                skipped_files.append((older, f"older {schema_name} file"))
+
+    # Determine which schemas the user's filters target
+    _FILTER_SCHEMA_MAP = {
+        "benchmarkTitle": SCHEMA_POLICY, "profileTitle": SCHEMA_POLICY,
+        "publisher": SCHEMA_POLICY, "ruleTitle": SCHEMA_POLICY,
+        "benchmarkVersion": SCHEMA_POLICY, "finalStatus": SCHEMA_POLICY,
+        "vulnId": "vulnerability", "cvssScore": "vulnerability",
+        "cvssV3Score": "vulnerability", "severity": "vulnerability",
+        "hasExploits": "vulnerability", "firstFoundTimestamp": "vulnerability",
+    }
+    targeted_schemas: set[str] = set()
+    for col_name in [k for k, v in {
+        "benchmarkTitle": benchmark_title, "profileTitle": profile_title,
+        "publisher": publisher, "ruleTitle": rule_title,
+        "benchmarkVersion": benchmark_version, "finalStatus": status_filter,
+        "severity": severity, "cvssScore": cvss_score,
+        "hasExploits": has_exploits, "firstFoundTimestamp": first_found,
+    }.items() if v is not None]:
+        schema = _FILTER_SCHEMA_MAP.get(col_name)
+        if schema:
+            targeted_schemas.add(schema)
+
+    if config.verbose and skipped_files:
+        click.echo("Ignoring the following files:", err=True)
+        for fp, reason in skipped_files:
+            r = f" ({reason})" if reason else " (unknown schema)"
+            click.echo(f"  {fp.resolve()}{r}", err=True)
+
+    # 3. Read non-asset files as primary data
+    primary_paths = []
+    for schema_name, file_list in schema_groups.items():
+        if schema_name != SCHEMA_ASSET:
+            primary_paths.extend(file_list)
+
+    if not primary_paths:
+        # If only asset files, treat them as primary
+        primary_paths = schema_groups.get(SCHEMA_ASSET, [])
+
+    primary_rows = read_parquet_files(primary_paths)
+
+    # 4. If asset files exist and we have non-asset primary data, auto-join
+    asset_paths = schema_groups.get(SCHEMA_ASSET, [])
+    has_asset_data = bool(asset_paths) and primary_paths != asset_paths
+    if has_asset_data:
+        asset_rows = read_parquet_files(asset_paths)
+        primary_rows = auto_join(primary_rows, asset_rows)
+
+    # 4b. Validate --only columns that require asset data
+    _ASSET_ONLY_COLUMNS = {"hostName", "ip", "mac", "osFamily", "osProduct", "osVendor",
+                           "osVersion", "osType", "osDescription", "osArchitecture",
+                           "agentId", "awsInstanceId", "azureResourceId", "gcpObjectId",
+                           "sites", "assetGroups", "tags"}
+    if only_columns:
+        requested_cols = {c.strip() for c in only_columns.split(",")}
+        asset_cols_requested = requested_cols & _ASSET_ONLY_COLUMNS
+        if asset_cols_requested and not has_asset_data:
+            click.echo(
+                f"Error: asset field(s) {', '.join(sorted(asset_cols_requested))} specified in --only "
+                f"but no asset Parquet file was found. Include an asset.*.parquet file to use asset fields.",
+                err=True,
+            )
+            sys.exit(1)
+
+    # 5. Build filters dict from CLI options
+    filters: dict[str, str] = {}
+    option_map = {
+        "hostName": hostname,
+        "ip": ip,
+        "osFamily": os_family,
+        "severity": severity,
+        "cvssV3Severity": severity,
+        "cvssScore": cvss_score,
+        "cvssV3Score": cvss_score,
+        "riskScore": risk_score,
+        "hasExploits": has_exploits,
+        "firstFoundTimestamp": first_found,
+        "finalStatus": status_filter,
+        "benchmarkTitle": benchmark_title,
+        "profileTitle": profile_title,
+        "publisher": publisher,
+        "ruleTitle": rule_title,
+        "benchmarkVersion": benchmark_version,
+    }
+    for col, val in option_map.items():
+        if val is not None:
+            filters[col] = val
+
+    # 5b. Validate policy-specific filters against schema
+    _POLICY_ONLY_FILTERS = {"benchmarkTitle", "profileTitle", "publisher", "ruleTitle", "benchmarkVersion"}
+    active_policy_filters = _POLICY_ONLY_FILTERS & set(filters.keys())
+    if active_policy_filters and SCHEMA_POLICY not in [detect_schema(p) for p in primary_paths]:
+        click.echo(
+            f"Warning: {', '.join('--' + f for f in active_policy_filters)} are only valid for policy schema files. "
+            f"These filters will be ignored.",
+            err=True,
+        )
+        for f in active_policy_filters:
+            del filters[f]
+
+    # 5c. Inform user if no filters are active
+    if not filters and not where_clauses:
+        click.echo(
+            f"Returning all data ({len(primary_rows)} rows). Use filters to narrow results "
+            f"(e.g. --hostname, --severity, --cvss-score, --where).",
+            err=True,
+        )
+
+    # 6. Apply filters then where clauses
+    filtered = apply_filters(primary_rows, filters)
+
+    # Build schema_columns dict for --where type detection
+    schema_columns: dict[str, str] = {}
+    if primary_paths:
+        import pyarrow.parquet as pq
+        try:
+            pa_schema = pq.read_schema(str(primary_paths[0].resolve()))
+            for i in range(len(pa_schema)):
+                schema_columns[pa_schema.field(i).name] = str(pa_schema.field(i).type)
+        except Exception:
+            pass
+
+    filtered = apply_where(filtered, list(where_clauses), schema_columns)
+
+    # 7. Column projection (--only)
+    if only_columns:
+        cols = [c.strip() for c in only_columns.split(",")]
+        filtered = [{c: row.get(c) for c in cols if c in row} for row in filtered]
+
+    # 8. Output — apply limit directly since we pass a plain list
+    if config.limit is not None:
+        filtered = filtered[:config.limit]
+
+    click.echo(
+        format_output(filtered, config.output_format, limit=None, search=config.search, short=config.short)
+    )
+
+
+# ---------------------------------------------------------------------------
 # vm export external-assets
 # ---------------------------------------------------------------------------
 
+
+
+# ---------------------------------------------------------------------------
+# vm export schema
+# ---------------------------------------------------------------------------
+
+# Hard-coded schemas so the command works without any parquet files on disk.
+# Each entry is (column_name, column_type, example_value).
+_EXPORT_SCHEMAS: dict[str, list[tuple[str, str, str]]] = {
+    "asset": [
+        ("orgId", "VARCHAR", "4be646d8-b4aa-…-a7c58d0a6396"),
+        ("assetId", "VARCHAR", "3a0f4d79-1089-…-6964b801291d"),
+        ("agentId", "VARCHAR", "cc2fe28324824836abdc23bdd1228ffb"),
+        ("awsInstanceId", "VARCHAR", "i-0cac20ad3a055e8c9"),
+        ("azureResourceId", "VARCHAR", ""),
+        ("gcpObjectId", "VARCHAR", ""),
+        ("mac", "VARCHAR", "0AFF000096D1"),
+        ("ip", "VARCHAR", "10.2.153.2"),
+        ("hostName", "VARCHAR", "ws-violet_bernard.mustafar.lab"),
+        ("osArchitecture", "VARCHAR", "x86"),
+        ("osFamily", "VARCHAR", "Windows"),
+        ("osProduct", "VARCHAR", "Windows Vista Enterprise Edition"),
+        ("osVendor", "VARCHAR", "Microsoft"),
+        ("osVersion", "VARCHAR", "7.1.2"),
+        ("osType", "VARCHAR", "Workstation"),
+        ("osDescription", "VARCHAR", "Microsoft Windows Vista Enterprise…"),
+        ("riskScore", "DOUBLE", "0.0"),
+        ("sites", "VARCHAR[]", "['Bangalore']"),
+        ("assetGroups", "VARCHAR[]", "['Windows 8.1']"),
+        ("tags", "STRUCT(…)[]", "[{name:Ben tag test,tagType:CUSTOM}]"),
+    ],
+    "vulnerability": [
+        ("orgId", "VARCHAR", "4be646d8-b4aa-…-a7c58d0a6396"),
+        ("assetId", "VARCHAR", "3a0f4d79-1089-…-6964b801291d"),
+        ("vulnId", "VARCHAR", "adobe-apsb12-22-cve-2012-5673"),
+        ("checkId", "VARCHAR", "microsoft-windows-cve-2016-0026-…"),
+        ("port", "INTEGER", "443"),
+        ("protocol", "VARCHAR", "TCP"),
+        ("nic", "VARCHAR", "f65471a7-7550-…-9eb434678606"),
+        ("proof", "VARCHAR", "<p>Vulnerable OS: Apple Mac OS X…"),
+        ("firstFoundTimestamp", "TIMESTAMP", "2025-11-07T04:24:22"),
+        ("reintroducedTimestamp", "TIMESTAMP", "2026-03-23T04:25:21"),
+        ("cves", "VARCHAR[]", "['CVE-2012-5673']"),
+        ("cvssAccessComplexity", "VARCHAR", "L"),
+        ("cvssAccessVector", "VARCHAR", "N"),
+        ("cvssAuthentication", "VARCHAR", "N"),
+        ("cvssAvailabilityImpact", "VARCHAR", "C"),
+        ("cvssConfidentialityImpact", "VARCHAR", "C"),
+        ("cvssIntegrityImpact", "VARCHAR", "C"),
+        ("cvssScore", "DOUBLE", "8.8"),
+        ("cvssV3AttackComplexity", "VARCHAR", "Low"),
+        ("cvssV3AttackVector", "VARCHAR", "Network"),
+        ("cvssV3Availability", "VARCHAR", "High"),
+        ("cvssV3Confidentiality", "VARCHAR", "High"),
+        ("cvssV3Integrity", "VARCHAR", "High"),
+        ("cvssV3PrivilegesRequired", "VARCHAR", "None"),
+        ("cvssV3Scope", "VARCHAR", "Unchanged"),
+        ("cvssV3Score", "DOUBLE", "8.8"),
+        ("cvssV3Severity", "VARCHAR", "High"),
+        ("cvssV3SeverityRank", "INTEGER", "4"),
+        ("cvssV3UserInteraction", "VARCHAR", "Required"),
+        ("dateAdded", "TIMESTAMP", "2012-11-09T00:00:00"),
+        ("dateModified", "TIMESTAMP", "2025-02-18T00:00:00"),
+        ("datePublished", "TIMESTAMP", "2012-10-08T00:00:00"),
+        ("description", "VARCHAR", "Unspecified vulnerability in Adobe…"),
+        ("hasExploits", "BOOLEAN", "false"),
+        ("pciCompliant", "BOOLEAN", "false"),
+        ("pciSeverity", "INTEGER", "5"),
+        ("riskScore", "DOUBLE", "897.96"),
+        ("riskScoreV2_0", "INTEGER", "589"),
+        ("severity", "VARCHAR", "Critical"),
+        ("severityRank", "INTEGER", "3"),
+        ("severityScore", "INTEGER", "10"),
+        ("skillLevel", "VARCHAR", "unknown"),
+        ("skillLevelRank", "INTEGER", "4"),
+        ("threatFeedExists", "BOOLEAN", "false"),
+        ("title", "VARCHAR", "APSB12-22: Security updates for Adobe…"),
+        ("tags", "VARCHAR[]", "['Adobe','Adobe Flash']"),
+        ("epssscore", "DECIMAL(10,9)", "0.013470000"),
+        ("epsspercentile", "DECIMAL(10,9)", "0.797390000"),
+    ],
+    "policy": [
+        ("benchmarkNaturalId", "VARCHAR", "xccdf_org.cisecurity…CIS_RHEL_7"),
+        ("profileNaturalId", "VARCHAR", "xccdf_org.cisecurity…Level_1_Server"),
+        ("benchmarkVersion", "VARCHAR", "4.0.0"),
+        ("ruleNaturalId", "VARCHAR", "xccdf_org.cisecurity…noexec_tmp"),
+        ("orgId", "VARCHAR", "4be646d8-b4aa-…-a7c58d0a6396"),
+        ("assetId", "VARCHAR", "3a0f4d79-1089-…-6964b801291d"),
+        ("finalStatus", "VARCHAR", "NOT_APPLICABLE"),
+        ("proof", "VARCHAR", "<p>This is a complex check…"),
+        ("lastAssessmentTimestamp", "TIMESTAMP", "2026-02-23T03:14:15"),
+        ("benchmarkTitle", "VARCHAR", "CIS Red Hat Enterprise Linux 7…"),
+        ("profileTitle", "VARCHAR", "Level 1 - Server"),
+        ("publisher", "VARCHAR", "CIS"),
+        ("ruleTitle", "VARCHAR", "1.1.2.1.4. Ensure noexec on /tmp"),
+        ("fixTexts", "VARCHAR[]", "['Edit /etc/fstab and add noexec…']"),
+        ("rationales", "VARCHAR[]", "['Since /tmp is only for temp…']"),
+    ],
+    "remediation": [
+        ("orgId", "VARCHAR", "4be646d8-b4aa-…-a7c58d0a6396"),
+        ("assetId", "VARCHAR", "3a0f4d79-1089-…-6964b801291d"),
+        ("cves", "VARCHAR[]", "['CVE-2025-15367']"),
+        ("vulnId", "VARCHAR", "ubuntu-cve-2025-15367"),
+        ("proof", "VARCHAR", "<p>Vulnerable OS: Ubuntu Linux 22.04…"),
+        ("firstFoundTimestamp", "TIMESTAMP", "2026-02-06T21:55:06"),
+        ("reintroducedTimestamp", "TIMESTAMP", ""),
+        ("lastDetected", "TIMESTAMP", "2026-02-06T21:58:12"),
+        ("lastRemoved", "TIMESTAMP", "2026-02-10T04:06:26"),
+        ("title", "VARCHAR", "Ubuntu: (CVE-2025-15367): Python…"),
+        ("description", "VARCHAR", "The poplib module, when passed a…"),
+        ("cvssV2Score", "DECIMAL(3,1)", "7.5"),
+        ("cvssV3Score", "DECIMAL(3,1)", "7.1"),
+        ("cvssV2Severity", "VARCHAR", "High"),
+        ("cvssV3Severity", "VARCHAR", "High"),
+        ("cvssV2AttackVector", "VARCHAR", "(AV:N/AC:L/Au:S/C:P/I:C/A:N)"),
+        ("cvssV3AttackVector", "VARCHAR", "CVSS:3.0/AV:N/AC:L/PR:L/UI:N/…"),
+        ("riskScoreV2_0", "INTEGER", "475"),
+        ("riskScoreV2_0Severity", "VARCHAR", "Moderate"),
+        ("datePublished", "TIMESTAMP", "2026-01-20T00:00:00"),
+        ("dateAdded", "TIMESTAMP", "2026-02-06T00:00:00"),
+        ("dateModified", "TIMESTAMP", "2026-03-27T00:00:00"),
+        ("epssScore", "DECIMAL(10,9)", "0.000770000"),
+        ("epssPercentile", "DECIMAL(10,9)", "0.230340000"),
+        ("remediationCount", "BIGINT", "1"),
+    ],
+}
+
+
+@export.command("schema")
+@click.argument("schema_type", required=False, default=None,
+                type=click.Choice(list(_EXPORT_SCHEMAS.keys()), case_sensitive=False))
+@click.pass_context
+def export_schema(ctx, schema_type):
+    """Show the column schema for a bulk-export dataset.
+
+    \b
+    Schema types: asset, vulnerability, policy, remediation
+
+    \b
+    Examples:
+      # List available schemas
+      r7-cli vm export schema
+
+    \b
+      # Show the vulnerability export schema
+      r7-cli vm export schema vulnerability
+
+    \b
+      # Show the asset export schema
+      r7-cli vm export schema asset
+    """
+    if schema_type is None:
+        click.echo("Available export schemas:\n")
+        for name in _EXPORT_SCHEMAS:
+            count = len(_EXPORT_SCHEMAS[name])
+            click.echo(f"  {name:<20s} {count} columns")
+        click.echo("\nUsage: r7-cli vm export schema <type>")
+        return
+
+    columns = _EXPORT_SCHEMAS[schema_type.lower()]
+    name_w = max(len(c[0]) for c in columns)
+    type_w = max(len(c[1]) for c in columns)
+
+    header = f"{'column_name':<{name_w}}  {'column_type':<{type_w}}  example"
+    sep = "─" * len(header)
+
+    click.echo(f"{schema_type}")
+    click.echo(sep)
+    click.echo(header)
+    click.echo(sep)
+    for col_name, col_type, example in columns:
+        click.echo(f"{col_name:<{name_w}}  {col_type:<{type_w}}  {example}")
+    click.echo(sep)
+    click.echo(f"{len(columns)} columns")
 
 
 # ---------------------------------------------------------------------------

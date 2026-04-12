@@ -10,6 +10,7 @@ from typing import Optional
 
 from r7cli.models import (
     REGION_ALIASES,
+    VALID_OUTPUT_FORMATS,
     VALID_REGIONS,
     UserInputError,
 )
@@ -70,6 +71,13 @@ def resolve_config(
 
     # --- drp_token: flag → env (not required globally) ---
     drp_token = drp_token_flag or os.environ.get("R7_DRP_TOKEN") or ""
+
+    # --- validate output format ---
+    if output_format not in VALID_OUTPUT_FORMATS:
+        supported = ", ".join(sorted(VALID_OUTPUT_FORMATS))
+        raise UserInputError(
+            f"Unsupported output format '{output_format}'. Supported formats: {supported}"
+        )
 
     return Config(
         region=region,
