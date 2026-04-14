@@ -206,7 +206,7 @@ def _find_cached_files(output_dir: str) -> list[Path]:
 # Click command
 # ---------------------------------------------------------------------------
 
-@click.command("compliance")
+@click.group("compliance", invoke_without_command=True)
 @click.option("--output-dir", type=click.Path(), default=".", help="Directory for Parquet files.")
 @click.option("--table-name", default="policy_compliance", help="SQL target table name.")
 @click.option("--sql-file", type=click.Path(), default=None, help="Write output to file instead of stdout.")
@@ -218,6 +218,10 @@ def compliance(ctx, output_dir, table_name, sql_file, poll_interval):
     Triggers a VM policy export, downloads the Parquet files, reads the
     asset_policy data, and emits SQL INSERT statements (or json/table/csv/tsv).
     The downloaded files are stored in the Parquet format.
+
+    \b
+    Subcommands:
+      list   List CIS controls by product
 
     \b
     Examples:
@@ -244,6 +248,10 @@ def compliance(ctx, output_dir, table_name, sql_file, poll_interval):
       # Specify output directory for Parquet files
       r7-cli compliance --output-dir ./exports
     """
+    # If a subcommand was invoked, skip the default export behavior
+    if ctx.invoked_subcommand is not None:
+        return
+
     config: Config = ctx.obj["config"]
 
     # Default output format to "sql" when user hasn't explicitly set --output
@@ -348,3 +356,64 @@ def _run_export_pipeline(config: Config, output_dir: str, poll_interval: int) ->
 
     # Download and rename
     return _download_and_rename(client, export, output_dir)
+
+# ---------------------------------------------------------------------------
+# compliance list — CIS controls by product
+# ---------------------------------------------------------------------------
+
+@compliance.command("list")
+@click.option("--vm", "show_vm", is_flag=True, help="Show CIS controls for InsightVM.")
+@click.option("--siem", "show_siem", is_flag=True, help="Show CIS controls for InsightIDR.")
+@click.option("--asm", "show_asm", is_flag=True, help="Show CIS controls for Surface Command.")
+@click.option("--drp", "show_drp", is_flag=True, help="Show CIS controls for Digital Risk Protection.")
+@click.option("--appsec", "show_appsec", is_flag=True, help="Show CIS controls for InsightAppSec.")
+@click.option("--cnapp", "show_cnapp", is_flag=True, help="Show CIS controls for InsightCloudSec.")
+@click.option("--soar", "show_soar", is_flag=True, help="Show CIS controls for InsightConnect.")
+@click.option("--ig1", is_flag=True, help="Show only CIS IG1 controls.")
+@click.option("--ig2", is_flag=True, help="Show only CIS IG2 controls.")
+@click.option("--ig3", is_flag=True, help="Show only CIS IG3 controls.")
+@click.option("--other", is_flag=True, help="Show controls not mapped to any Rapid7 product.")
+@click.pass_context
+def compliance_list(ctx, show_vm, show_siem, show_asm, show_drp, show_appsec, show_cnapp, show_soar, ig1, ig2, ig3, other):
+    """List CIS controls, optionally filtered by product.
+
+    \b
+    Examples:
+      r7-cli platform compliance list
+      r7-cli platform compliance list --vm
+      r7-cli platform compliance list --siem --ig1
+      r7-cli -o table platform compliance list --asm
+      r7-cli platform compliance list --other
+    """
+    from r7cli.cis import query_cis_controls
+    from r7cli.output import format_output as _fmt
+
+    config: Config = ctx.obj["config"]
+
+    # Determine which solution to filter by
+    solution = None
+    flags = {
+        "vm": show_vm, "siem": show_siem, "asm": show_asm,
+        "drp": show_drp, "appsec": show_appsec, "cnapp": show_cnapp,
+        "soar": show_soar,
+    }
+    selected = [k for k, v in flags.items() if v]
+    if len(selected) > 1:
+        click.echo("Specify at most one product flag.", err=True)
+        sys.exit(1)
+    if selected:
+        solution = selected[0]
+
+    results = query_cis_controls(
+        solution=solution,
+        ig1=ig1,
+        ig2=ig2,
+        ig3=ig3,
+        other=other,
+    )
+
+    if not results:
+        click.echo("No matching CIS controls found.", err=True)
+        return
+
+    click.echo(_fmt(results, config.output_format, config.limit, config.search, short=config.short))

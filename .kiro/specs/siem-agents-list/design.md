@@ -313,3 +313,13 @@ Use **Hypothesis** for property-based testing (already a standard Python PBT lib
 - End-to-end Click runner test with mocked `R7Client` verifying the full command flow from CLI invocation through output
 - Verify `--all-pages` makes multiple requests with correct cursor values against a mock
 - Verify `--auto` polling loop with mocked sleep and client
+
+
+## Post-Implementation Changes
+
+- Command moved from `r7-cli siem agents list` to also be available as `r7-cli platform assets list` (via `agents.py`)
+- GQL query simplified: removed host, endpointPrevention, bootstrap fields; now uses agent (id, agentStatus, agentSemanticVersion, deployTime, agentLastUpdateTime), publicIpAddress, platform
+- `--ngav-status` and `--velociraptor-status` filters removed
+- `-l/--limit` renamed to `--size` to avoid conflict with global `-l`
+- `assets count` subcommand added with `--vm`, `--siem`, `--asm`, `--appsec`, `--drp` options
+- Org ID resolution via `_resolve_org_id` helper

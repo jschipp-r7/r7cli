@@ -258,3 +258,15 @@ Hypothesis is already listed in `[project.optional-dependencies] dev` in `pyproj
 - Full pipeline with mocked Products API returning sample product list — verify correct matrix output
 - `--cache` with cached response — verify no live API call
 - Empty product list — verify all applicable cells show 🚫
+
+
+## Post-Implementation Changes
+
+- Module renamed from `security_checklist.py` to `matrix.py`
+- Command moved from top-level `r7-cli security-checklist` to `r7-cli platform matrix`
+- Product code map updated: "IH" and "TC" both map to "DRP", "CAS" maps to Vector Command
+- Cell mappings updated with DRP in DETECT/RESPOND, percentages added to cells
+- `--scoring` flag added to print scoring rules
+- `--solution` flag added to show product names per cell
+- `build_recommendations()` function added for product recommendations
+- Backward-compat alias `security_checklist = matrix` removed

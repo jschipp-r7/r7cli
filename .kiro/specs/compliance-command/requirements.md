@@ -144,3 +144,11 @@ The export API response contains a `result` array where each entry has a `prefix
 1. THE Parquet_Processor SHALL produce SQL INSERT statements that, when parsed back, yield column names and values equivalent to the original Parquet row data.
 2. FOR ALL valid Parquet rows containing supported column types, reading the row and generating an INSERT statement then parsing that INSERT statement SHALL produce values equivalent to the original row (round-trip property).
 3. THE Parquet_Processor SHALL format timestamp values in ISO-8601 format within SQL string literals.
+
+
+## Post-Implementation Changes
+
+- Command moved from top-level `r7-cli compliance` to `r7-cli platform compliance`
+- TSV format support added to `output.py` (shared across all commands)
+- `pyarrow` added as a required dependency
+- File naming uses `_short_iso_timestamp()` helper in `vm.py`'s `_download_parquet_urls`

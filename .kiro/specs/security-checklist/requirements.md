@@ -124,3 +124,15 @@ Add a top-level `security-checklist` command to the r7-cli tool, invoked as `r7-
 2. FOR ALL subsets of the Product_Code_Map values as the user's licensed products, evaluating coverage for every cell SHALL produce "not covered" only when the cell has required products and the intersection with the licensed products is empty.
 3. FOR ALL cells where the Cell_Mapping value is None or N/A, evaluating coverage SHALL produce "not applicable" regardless of the user's licensed products.
 4. FOR ALL valid product code lists returned by the Products_API, resolving codes through the Product_Code_Map and then evaluating coverage SHALL produce the same result as directly evaluating with the corresponding canonical product names (round-trip property through code resolution).
+
+
+## Post-Implementation Changes
+
+- Module renamed from `security_checklist.py` to `matrix.py`
+- Command moved from top-level `r7-cli security-checklist` to `r7-cli platform matrix`
+- Product code map updated: "IH" and "TC" both map to "DRP", "CAS" maps to Vector Command
+- Cell mappings updated with DRP in DETECT/RESPOND, percentages added to cells
+- `--scoring` flag added to print scoring rules
+- `--solution` flag added to show product names per cell
+- `build_recommendations()` function added for product recommendations
+- Backward-compat alias `security_checklist = matrix` removed

@@ -131,8 +131,11 @@ def _fetch_details(
 @click.pass_context
 def drp(ctx):
     """Digital Risk Protection commands."""
-    from r7cli.main import _check_license
-    _check_license(ctx, "drp")
+    pass
+
+
+from r7cli.cis import make_cis_command as _make_cis_drp
+drp.add_command(_make_cis_drp("drp"))
 
 
 # ---------------------------------------------------------------------------

@@ -160,3 +160,10 @@ The `--reality` / `--deployment` option extends the existing `matrix rapid7` com
 
 1. WHEN `--reality` is enabled, THE Matrix_Command SHALL render the adjusted percentages using the same `render_matrix` grid format used by `--percent`.
 2. WHEN `--reality` is enabled, THE Matrix_Command SHALL print a descriptive header to stderr indicating that percentages are adjusted for deployment state.
+
+
+## Post-Implementation Changes
+
+- Additional deployment checks added beyond the original 5: event sources (no event sources → -75%, fewer than 5 → -50%), stale/offline agents (dynamic: 10% reduction per 10% unhealthy), active InsightConnect workflows (no workflows → -10% DETECT), Surface Command connectors (fewer than 5 third-party → -50%)
+- `--scoring` flag added to print all scoring rules
+- `build_recommendations()` added for product recommendations

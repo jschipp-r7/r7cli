@@ -48,8 +48,11 @@ def _resolve_body(data_str: str | None, data_file: str | None) -> dict | None:
 @click.pass_context
 def soar(ctx):
     """InsightConnect / SOAR commands."""
-    from r7cli.main import _check_license
-    _check_license(ctx, "soar")
+    pass
+
+
+from r7cli.cis import make_cis_command as _make_cis_soar
+soar.add_command(_make_cis_soar("soar"))
 
 
 # ---------------------------------------------------------------------------

@@ -121,3 +121,13 @@ Add a `siem agents list` subcommand to r7-cli that queries the Rapid7 InsightIDR
 1. THE CLI SHALL register an `agents` Click group under the existing `siem` group
 2. THE CLI SHALL register a `list` command under the `agents` group
 3. WHEN `r7-cli siem agents list` is invoked with `--help`, THE Agents_List_Command SHALL display usage information including all available options
+
+
+## Post-Implementation Changes
+
+- Command moved from `r7-cli siem agents list` to also be available as `r7-cli platform assets list` (via `agents.py`)
+- GQL query simplified: removed host, endpointPrevention, bootstrap fields; now uses agent (id, agentStatus, agentSemanticVersion, deployTime, agentLastUpdateTime), publicIpAddress, platform
+- `--ngav-status` and `--velociraptor-status` filters removed
+- `-l/--limit` renamed to `--size` to avoid conflict with global `-l`
+- `assets count` subcommand added with `--vm`, `--siem`, `--asm`, `--appsec`, `--drp` options
+- Org ID resolution via `_resolve_org_id` helper

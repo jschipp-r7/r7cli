@@ -173,8 +173,11 @@ def _ms_to_human(ms: int) -> str:
 @click.pass_context
 def siem(ctx):
     """InsightIDR / SIEM commands."""
-    from r7cli.main import _check_license
-    _check_license(ctx, "siem")
+    pass
+
+
+from r7cli.cis import make_cis_command as _make_cis_siem
+siem.add_command(_make_cis_siem("siem"))
 
 
 # Parent groups for reorganized commands
@@ -321,8 +324,10 @@ def logsets(ctx):
 @logsets.command("list")
 @click.option("-a", "--auto", "auto_poll", is_flag=True, help="Poll for new entries and only print new ones.")
 @click.option("-i", "--interval", type=int, default=10, help="Polling interval in seconds (default: 10).")
+@click.option("--name", "names_only", is_flag=True, help="Only print logset names as a flat array.")
+@click.option("--ids", "show_ids", is_flag=True, help="Print logset names mapped to their log IDs.")
 @click.pass_context
-def logsets_list(ctx, auto_poll, interval):
+def logsets_list(ctx, auto_poll, interval, names_only, show_ids):
     """List all IDR logsets."""
     config = _get_config(ctx)
     client = R7Client(config)
@@ -331,6 +336,25 @@ def logsets_list(ctx, auto_poll, interval):
 
     try:
         result = client.get(url, solution="siem", subcommand="logsets-list")
+
+        if names_only:
+            items = _extract_items(result)
+            names = sorted(set(item.get("name", "") for item in items if item.get("name")))
+            click.echo(format_output(names, config.output_format, config.limit, config.search, short=config.short))
+            return
+
+        if show_ids:
+            logsets = result.get("logsets", []) if isinstance(result, dict) else result if isinstance(result, list) else []
+            id_map: dict[str, list[str]] = {}
+            for ls in logsets:
+                ls_name = ls.get("name", "")
+                if not ls_name:
+                    continue
+                logs_info = ls.get("logs_info", [])
+                ids = [log.get("id") for log in logs_info if log.get("id")]
+                id_map[ls_name] = ids
+            click.echo(format_output(id_map, config.output_format, config.limit, config.search, short=config.short))
+            return
 
         if not auto_poll:
             click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
@@ -383,47 +407,48 @@ def _resolve_log_ids(client: R7Client, config: Config, logset_name: str, time_ra
 def _poll_log_query(client: R7Client, config: Config, links: list[dict], max_pages: int) -> list[str]:
     """Poll async log query links, collecting event lines.
 
+    Handles the InsightIDR async query lifecycle:
+    1. Poll "Self" links until the query completes (no Self link in response)
+    2. Collect events from each completed response
+    3. Follow "Next" links for pagination
+    4. Poll at most every 15s to stay within the 20s expiry window
+    5. Stop on error code 101056 (link expired)
+
     Returns a list of log event strings.
     """
     events: list[str] = []
     pages_fetched = 0
 
-    # Find the polling href from links
-    poll_url: str | None = None
+    # Find the initial link (Self or any href)
+    current_url: str | None = None
     for link in links:
         href = link.get("href")
         if href:
-            poll_url = href
+            current_url = href
             break
 
-    if not poll_url:
+    if not current_url:
         return events
 
-    while poll_url and pages_fetched < max_pages:
-        time.sleep(20)
+    while current_url and pages_fetched < max_pages:
+        time.sleep(15)  # poll within the 20s expiry window
         try:
-            result = client.get(poll_url, solution="siem", subcommand="logs-query-poll")
+            result = client.get(current_url, solution="siem", subcommand="logs-query-poll")
         except R7Error as exc:
-            # Check for link-expired error code 101056
             if "101056" in str(exc):
-                click.echo(f"Warning: polling link expired for query.", err=True)
+                click.echo("Warning: polling link expired.", err=True)
                 break
             raise
 
-        # Check for error code 101056 in the response body
+        # Check for link-expired error in response body
         if isinstance(result, dict):
             error_code = result.get("error_code") or result.get("errorCode")
             if str(error_code) == "101056":
-                click.echo("Warning: polling link expired for query.", err=True)
+                click.echo("Warning: polling link expired.", err=True)
                 break
 
-        # Extract events from this page
-        page_events = []
-        if isinstance(result, dict):
-            page_events = result.get("events", result.get("data", []))
-        elif isinstance(result, list):
-            page_events = result
-
+        # Extract events from this response
+        page_events = result.get("events", []) if isinstance(result, dict) else []
         if isinstance(page_events, list):
             for ev in page_events:
                 if isinstance(ev, dict):
@@ -432,19 +457,32 @@ def _poll_log_query(client: R7Client, config: Config, links: list[dict], max_pag
                 else:
                     events.append(str(ev))
 
-        pages_fetched += 1
-
-        # Check for next page link
-        poll_url = None
-        next_links = result.get("links", []) if isinstance(result, dict) else []
-        for link in next_links:
+        # Check links for Self (still polling) or Next (pagination)
+        resp_links = result.get("links", []) if isinstance(result, dict) else []
+        self_url = None
+        next_url = None
+        for link in resp_links:
             rel = link.get("rel", "")
-            if rel == "Next" or rel == "next":
-                poll_url = link.get("href")
-                break
+            if rel == "Self":
+                self_url = link.get("href")
+            elif rel in ("Next", "next"):
+                next_url = link.get("href")
 
-        # If the query is complete (no more links), stop
-        if not poll_url:
+        if self_url:
+            # Query still in progress — poll Self again
+            current_url = self_url
+            continue
+
+        # Query complete for this page
+        pages_fetched += 1
+        if config.verbose:
+            click.echo(f"  Page {pages_fetched}/{max_pages} — {len(page_events)} events", err=True)
+
+        if next_url:
+            # More pages — follow Next (which starts a new async query)
+            current_url = next_url
+        else:
+            # No more pages
             break
 
     return events
@@ -452,36 +490,132 @@ def _poll_log_query(client: R7Client, config: Config, links: list[dict], max_pag
 
 @logs.command("query")
 @click.option("-n", "--logset-name", required=True, help="Logset name to query.")
-@click.option("--time-range", default="Last 30 days", help="Time range for the query.")
+@click.option("--time-range", default=None,
+              help="Time range (default: 'Last 30 days'). Values: yesterday, today, or 'Last X unit' where unit is mins/hours/days/weeks/months/years. Mutually exclusive with --from/--to.")
+@click.option("--from", "from_ts", default=None,
+              help="Start time as epoch ms (e.g. 1450557004000) or ISO-8601 (e.g. 2025-01-01T00:00:00Z). Must be used with --to.")
+@click.option("--to", "to_ts", default=None,
+              help="End time as epoch ms or ISO-8601. Must be used with --from.")
+@click.option("-q", "--query", "leql_query", default=None,
+              help="LEQL query to filter logs (e.g. 'where(foo=bar)'). If omitted, retrieves all entries.")
 @click.option("-p", "--max-pages", type=int, default=20, help="Max pages to retrieve per Log_ID.")
 @click.pass_context
-def logs_query(ctx, logset_name, time_range, max_pages):
-    """Query log lines from a named logset."""
+def logs_query(ctx, logset_name, time_range, from_ts, to_ts, leql_query, max_pages):
+    """Query log lines from a named logset.
+
+    Resolves the logset name to log IDs, then queries each log ID
+    asynchronously, polling until results are available. Useful for
+    proving that raw logs exist for specific controls.
+
+    \b
+    API Flow:
+      1. GET /query/logsets?logset_name=X → returns log IDs
+      2. GET /query/logs/<log_id>?time_range=X → starts async query
+      3. Poll "Self" links until query completes
+      4. Follow "Next" links for pagination (up to --max-pages)
+
+    \b
+    Examples:
+      r7-cli siem logs query -n "DNS Query"
+      r7-cli siem logs query -n "Firewall Activity" --time-range "Last 7 days"
+      r7-cli siem logs query -n "Asset Authentication" --max-pages 5
+    """
     config = _get_config(ctx)
     client = R7Client(config)
     base = IDR_LOGS_BASE.format(region=config.region)
 
-    try:
-        # Step 1: Resolve logset name → Log_IDs
-        log_ids = _resolve_log_ids(client, config, logset_name, time_range)
-        if not log_ids:
-            click.echo(f"No Log_IDs found for logset '{logset_name}'.", err=True)
+    # Validate --from/--to vs --time-range mutual exclusivity
+    if (from_ts or to_ts) and time_range:
+        click.echo("Error: --from/--to and --time-range are mutually exclusive.", err=True)
+        sys.exit(1)
+    if (from_ts and not to_ts) or (to_ts and not from_ts):
+        click.echo("Error: --from and --to must be used together.", err=True)
+        sys.exit(1)
+
+    # Convert ISO timestamps to epoch ms if needed
+    def _to_epoch_ms(val: str) -> str:
+        """Convert ISO-8601 or epoch ms string to epoch ms string."""
+        if val.isdigit() and len(val) >= 10:
+            return val  # already epoch ms
+        try:
+            from datetime import datetime as _dt, timezone as _tz
+            dt = _dt.fromisoformat(val.replace("Z", "+00:00"))
+            return str(int(dt.timestamp() * 1000))
+        except (ValueError, AttributeError):
+            click.echo(f"Error: cannot parse timestamp '{val}'. Use epoch ms or ISO-8601.", err=True)
             sys.exit(1)
+
+    # Build query params
+    query_params: dict[str, str] = {}
+    if from_ts and to_ts:
+        query_params["from"] = _to_epoch_ms(from_ts)
+        query_params["to"] = _to_epoch_ms(to_ts)
+        time_range_label = f"{from_ts} → {to_ts}"
+    else:
+        if not time_range:
+            time_range = "Last 30 days"
+        query_params["time_range"] = time_range
+        time_range_label = time_range
+
+    if leql_query:
+        query_params["query"] = leql_query
+
+    # Cache: store/retrieve query results locally by logset name
+    import hashlib, json as _json
+    from pathlib import Path
+    _cache_dir = Path.home() / ".r7-cli" / "cache" / "log-queries"
+    _cache_key = hashlib.sha256(f"{logset_name}:{time_range_label}:{leql_query or ''}:{config.region}".encode()).hexdigest()[:16]
+    _cache_file = _cache_dir / f"{_cache_key}.json"
+
+    if config.use_cache and _cache_file.exists():
+        click.echo(f"Using cached results for logset '{logset_name}' from {_cache_file}", err=True)
+        cached_events = _json.loads(_cache_file.read_text())
+        if not cached_events:
+            click.echo(f"No cached log events for '{logset_name}'.", err=True)
+            return
+        click.echo(f"Found {len(cached_events)} cached log events.", err=True)
+        for line in cached_events:
+            click.echo(line)
+        return
+
+    try:
+        # Step 0: Validate logset name
+        logsets_url = f"{base}/management/logsets"
+        logsets_result = client.get(logsets_url, solution="siem", subcommand="logsets-list")
+        logsets_data = logsets_result.get("logsets", []) if isinstance(logsets_result, dict) else _extract_items(logsets_result)
+        valid_names = [ls.get("name", "") for ls in logsets_data if ls.get("name")]
+
+        if logset_name not in valid_names:
+            click.echo(f"Error: '{logset_name}' is not a valid logset name.", err=True)
+            # Suggest close matches (case-insensitive substring)
+            suggestions = [n for n in valid_names if logset_name.lower() in n.lower()]
+            if suggestions:
+                click.echo(f"Did you mean one of: {', '.join(suggestions[:5])}?", err=True)
+            else:
+                click.echo(f"Available logsets: {', '.join(sorted(valid_names))}", err=True)
+            sys.exit(1)
+
+        # Step 1: Resolve logset name → Log_IDs
+        log_ids = _resolve_log_ids(client, config, logset_name, query_params.get("time_range", "Last 30 days"))
+        if not log_ids:
+            click.echo(f"No log IDs found for logset '{logset_name}'.", err=True)
+            sys.exit(1)
+
+        click.echo(f"Logset '{logset_name}' has {len(log_ids)} log(s). Querying each…", err=True)
 
         all_events: list[str] = []
 
-        # Step 2 & 3: For each Log_ID, initiate async query and poll
-        for log_id in log_ids:
+        # Step 2: For each Log_ID, initiate async query and poll
+        for idx, log_id in enumerate(log_ids, 1):
+            if config.verbose:
+                click.echo(f"  [{idx}/{len(log_ids)}] Querying log {log_id}…", err=True)
+
             query_url = f"{base}/query/logs/{log_id}"
-            params = {"time_range": time_range}
             result = client.get(
-                query_url, params=params, solution="siem", subcommand="logs-query",
+                query_url, params=query_params, solution="siem", subcommand="logs-query",
             )
 
-            # Extract links for polling
-            links = result.get("links", []) if isinstance(result, dict) else []
-
-            # Also grab any events already in the initial response
+            # Collect any events from the initial response
             if isinstance(result, dict):
                 initial_events = result.get("events", [])
                 if isinstance(initial_events, list):
@@ -492,18 +626,33 @@ def logs_query(ctx, logset_name, time_range, max_pages):
                         else:
                             all_events.append(str(ev))
 
-            # Poll if there are links
+            # Check for links — need to poll Self or follow Next
+            links = result.get("links", []) if isinstance(result, dict) else []
             if links:
                 polled = _poll_log_query(client, config, links, max_pages)
                 all_events.extend(polled)
+
+            if config.verbose:
+                click.echo(f"  [{idx}/{len(log_ids)}] Collected {len(all_events)} total events so far", err=True)
 
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
 
     if not all_events:
-        click.echo("No log events found.", err=True)
+        click.echo(f"No log events found for logset '{logset_name}' within '{time_range}'.", err=True)
         return
+
+    click.echo(f"Found {len(all_events)} log events.", err=True)
+
+    # Save to cache for future --cache use
+    try:
+        _cache_dir.mkdir(parents=True, exist_ok=True)
+        _cache_file.write_text(_json.dumps(all_events))
+        if config.verbose:
+            click.echo(f"Cached results to {_cache_file}", err=True)
+    except OSError:
+        pass
 
     for line in all_events:
         click.echo(line)
@@ -2337,8 +2486,9 @@ def log_mgmt(ctx):
 @click.option("--name", "log_name", default=None, help="Filter by log name (substring match).")
 @click.option("--source-type", default=None, help="Filter by source_type (e.g. token, internal).")
 @click.option("--logset", "logset_name", default=None, help="Filter by logset name (substring match).")
+@click.option("--names-only", is_flag=True, help="Only print log names as a flat array.")
 @click.pass_context
-def log_mgmt_list(ctx, auto_poll, interval, log_name, source_type, logset_name):
+def log_mgmt_list(ctx, auto_poll, interval, log_name, source_type, logset_name, names_only):
     """List all logs.
 
     \b
@@ -2376,6 +2526,14 @@ def log_mgmt_list(ctx, auto_poll, interval, log_name, source_type, logset_name):
 
     try:
         result = client.get(url, solution="siem", subcommand="log-mgmt-list")
+
+        if names_only:
+            items = _extract_items(result)
+            if has_filters:
+                items = _apply_log_filters(items)
+            names = sorted(set(item.get("name", "") for item in items if item.get("name")))
+            click.echo(format_output(names, config.output_format, config.limit, config.search, short=config.short))
+            return
 
         if not auto_poll:
             if has_filters:

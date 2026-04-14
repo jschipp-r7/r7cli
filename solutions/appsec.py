@@ -449,8 +449,11 @@ def _fetch_all_pages_post(client, config, url, params, body, solution, subcomman
 @click.pass_context
 def appsec(ctx):
     """InsightAppSec commands."""
-    from r7cli.main import _check_license
-    _check_license(ctx, "appsec")
+    pass
+
+
+from r7cli.cis import make_cis_command as _make_cis_appsec
+appsec.add_command(_make_cis_appsec("appsec"))
 
 
 # ---------------------------------------------------------------------------

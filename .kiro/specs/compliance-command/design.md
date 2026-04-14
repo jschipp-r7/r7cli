@@ -246,3 +246,11 @@ Hypothesis is already listed in `[project.optional-dependencies] dev` in `pyproj
 - Export FAILED — verify stderr message and exit code 2
 - `--cache` with existing files — verify no API calls made
 - `--cache` with no files — verify fallback to export pipeline
+
+
+## Post-Implementation Changes
+
+- Command moved from top-level `r7-cli compliance` to `r7-cli platform compliance`
+- TSV format support added to `output.py` (shared across all commands)
+- `pyarrow` added as a required dependency
+- File naming uses `_short_iso_timestamp()` helper in `vm.py`'s `_download_parquet_urls`

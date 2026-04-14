@@ -306,8 +306,11 @@ def _submit_export(
 @click.pass_context
 def vm(ctx):
     """InsightVM commands (health, scans, engines, exports, job status)."""
-    from r7cli.main import _check_license
-    _check_license(ctx, "vm")
+    pass
+
+
+from r7cli.cis import make_cis_command as _make_cis
+vm.add_command(_make_cis("vm"))
 
 
 # ---------------------------------------------------------------------------

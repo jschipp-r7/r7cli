@@ -46,6 +46,7 @@ class R7Client:
         self._http = httpx.Client(timeout=float(config.timeout))
         self._cache = CacheStore()
         self._redact_re = _build_redact_pattern(config)
+        self._license_checked: set[str] = set()  # solutions already checked
 
     # -- convenience methods ------------------------------------------------
 
@@ -76,6 +77,12 @@ class R7Client:
 
         Returns the parsed JSON response body as a dict.
         """
+        # -- license check (lazy, once per solution) ------------------------
+        if solution and solution not in self._license_checked and solution != "platform":
+            self._license_checked.add(solution)
+            if not self.config.use_cache:
+                self._check_solution_license(solution)
+
         # -- cache check (before live call) ---------------------------------
         ck = cache_key(solution, subcommand, self.config.region, url, params or {})
         if self.config.use_cache:
@@ -230,6 +237,40 @@ class R7Client:
             ) from exc
         except httpx.RequestError as exc:
             raise NetworkError(str(exc)) from exc
+
+    def _check_solution_license(self, solution: str) -> None:
+        """Check if the user is licensed for the given solution. Exits if not."""
+        from r7cli.main import _SOLUTION_LICENSE_MAP
+        required_codes = _SOLUTION_LICENSE_MAP.get(solution)
+        if not required_codes or not self.config.api_key:
+            return
+        try:
+            from r7cli.models import ACCOUNT_BASE
+            url = ACCOUNT_BASE.format(region=self.config.region) + "/products"
+            resp = self._http.request(
+                "GET", url,
+                headers={"X-Api-Key": self.config.api_key, "Content-Type": "application/json"},
+            )
+            if resp.status_code != 200:
+                return  # fail open
+            data = resp.json()
+            codes = {item.get("product_code", "") for item in data} if isinstance(data, list) else set()
+            if codes and not any(code in codes for code in required_codes):
+                _FRIENDLY = {
+                    "vm": "InsightVM", "siem": "InsightIDR", "asm": "Surface Command",
+                    "drp": "Digital Risk Protection", "appsec": "InsightAppSec",
+                    "cnapp": "InsightCloudSec", "soar": "InsightConnect",
+                }
+                friendly = _FRIENDLY.get(solution, solution)
+                print(
+                    f"Error: your organization is not licensed for {friendly}. "
+                    f"This command requires one of the following product licenses: {', '.join(required_codes)}.\n"
+                    f"Check your licensed products with: r7-cli platform products list",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+        except Exception:
+            pass  # fail open on any error
 
     def _log(self, msg: str) -> None:
         """Print *msg* to stderr with credential redaction."""
