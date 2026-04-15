@@ -21,6 +21,29 @@ VALID_SOLUTIONS: frozenset[str] = frozenset({
 STUB_SOLUTIONS: frozenset[str] = frozenset()
 
 # ---------------------------------------------------------------------------
+# Market technologies
+# ---------------------------------------------------------------------------
+VALID_MARKET_TECHNOLOGIES: frozenset[str] = frozenset({
+    "AGW", "AISPM", "AM", "AppSec", "BAS", "BDR", "Browser",
+    "CAASM", "CM", "CMDB", "CNAPP", "CR", "CSP", "Compliance",
+    "DAST", "DFIR", "DLP", "DM", "DRP", "DS", "DSPM",
+    "EASM", "EDR", "EM", "EPP", "ES",
+    "FIM", "FW",
+    "GRC",
+    "HIDS", "HIPS", "HRM",
+    "IAM", "ID", "IDP", "IDS", "IGA", "IPS", "IR", "ISPM", "ITDR", "IaaS", "Infrastructure",
+    "MDM", "MDR",
+    "NGAV", "NSM", "NTA",
+    "PKI", "PM", "PT", "PaaS",
+    "SASE", "SAST", "SCA", "SIEM", "SOAR", "SSPM", "Software",
+    "TIP",
+    "UAT",
+    "VM",
+    "WAF", "Web Proxy",
+    "XDR",
+})
+
+# ---------------------------------------------------------------------------
 # Output / search
 # ---------------------------------------------------------------------------
 VALID_OUTPUT_FORMATS: frozenset[str] = frozenset({"json", "table", "csv", "tsv", "sql"})

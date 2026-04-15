@@ -369,19 +369,27 @@ def _run_export_pipeline(config: Config, output_dir: str, poll_interval: int) ->
 @click.option("--appsec", "show_appsec", is_flag=True, help="Show CIS controls for InsightAppSec.")
 @click.option("--cnapp", "show_cnapp", is_flag=True, help="Show CIS controls for InsightCloudSec.")
 @click.option("--soar", "show_soar", is_flag=True, help="Show CIS controls for InsightConnect.")
+@click.option("--dspm", "show_dspm", is_flag=True, help="Show CIS controls for DSPM.")
+@click.option("--grc", "show_grc", is_flag=True, help="Show CIS controls for Cyber GRC.")
+@click.option("--patching", "show_patching", is_flag=True, help="Show CIS controls for Automox (Patching).")
 @click.option("--ig1", is_flag=True, help="Show only CIS IG1 controls.")
 @click.option("--ig2", is_flag=True, help="Show only CIS IG2 controls.")
 @click.option("--ig3", is_flag=True, help="Show only CIS IG3 controls.")
+@click.option("--csf", is_flag=True, help="Show NIST CSF controls instead of CIS.")
 @click.option("--other", is_flag=True, help="Show controls not mapped to any Rapid7 product.")
 @click.pass_context
-def compliance_list(ctx, show_vm, show_siem, show_asm, show_drp, show_appsec, show_cnapp, show_soar, ig1, ig2, ig3, other):
-    """List CIS controls, optionally filtered by product.
+def compliance_list(ctx, show_vm, show_siem, show_asm, show_drp, show_appsec, show_cnapp, show_soar, show_dspm, show_grc, show_patching, ig1, ig2, ig3, csf, other):
+    """List CIS or NIST CSF controls, optionally filtered by product.
 
     \b
     Examples:
       r7-cli platform compliance list
       r7-cli platform compliance list --vm
       r7-cli platform compliance list --siem --ig1
+      r7-cli platform compliance list --csf
+      r7-cli platform compliance list --csf --vm
+      r7-cli platform compliance list --dspm
+      r7-cli platform compliance list --grc
       r7-cli -o table platform compliance list --asm
       r7-cli platform compliance list --other
     """
@@ -398,7 +406,7 @@ def compliance_list(ctx, show_vm, show_siem, show_asm, show_drp, show_appsec, sh
         "soar": show_soar,
     }
     selected = [k for k, v in flags.items() if v]
-    if len(selected) > 1:
+    if len(selected) > 1 or (selected and (show_dspm or show_grc or show_patching)) or sum([show_dspm, show_grc, show_patching]) > 1:
         click.echo("Specify at most one product flag.", err=True)
         sys.exit(1)
     if selected:
@@ -410,6 +418,10 @@ def compliance_list(ctx, show_vm, show_siem, show_asm, show_drp, show_appsec, sh
         ig2=ig2,
         ig3=ig3,
         other=other,
+        dspm=show_dspm,
+        grc=show_grc,
+        patching=show_patching,
+        csf=csf,
     )
 
     if not results:

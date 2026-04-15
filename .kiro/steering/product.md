@@ -22,6 +22,10 @@ r7-cli is a CLI for the Rapid7 Command Platform. It wraps multiple security prod
 | `matrix`     | Coverage matrix      | none        | Offline NIST CSF × CIS v8 scoring           |
 | `extensions` | Extension Library    | none        | No auth required                            |
 
+## Market Technologies
+
+`VALID_MARKET_TECHNOLOGIES` in `models.py` enumerates the supported market technology categories (e.g. `SIEM`, `EDR`, `VM`, `CNAPP`, `SOAR`). These map to Rapid7 products via `product-market.mappings` (tab-delimited: category → implementation products → supporting products). The CIS module (`cis.py`) uses the CSV columns "Implementation Market Technologies" and "Supporting Market Technologies" to tag each control with its relevant market categories.
+
 ## Command Patterns
 
 Every solution command follows the same shape:

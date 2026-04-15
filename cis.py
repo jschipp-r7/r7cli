@@ -34,6 +34,9 @@ _SOLUTION_PRODUCTS: dict[str, list[str]] = {
     "appsec":  ["insightAppSec"],
     "cnapp":   ["insightCloudSec"],
     "soar":    ["insightConnect"],
+    "dspm":    ["DSPM Add-On"],
+    "grc":     ["Cyber GRC Add-On"],
+    "patching": ["Automox Add-On"],
 }
 
 # Friendly display names
@@ -45,13 +48,25 @@ _SOLUTION_DISPLAY: dict[str, str] = {
     "appsec":  "InsightAppSec",
     "cnapp":   "InsightCloudSec",
     "soar":    "InsightConnect",
+    "dspm":    "DSPM",
+    "grc":     "Cyber GRC",
+    "patching": "Automox (Patching)",
 }
 
-# Fields to display
+# Fields to display for CIS
 _DISPLAY_FIELDS = [
     "Framework",
     "Version",
     "CIS Asset Type",
+    "Control ID",
+    "Control Description",
+]
+
+# Fields to display for NIST CSF
+_CSF_DISPLAY_FIELDS = [
+    "Framework",
+    "Version",
+    "NIST Category",
     "Control ID",
     "Control Description",
 ]
@@ -69,6 +84,16 @@ def _load_cis_rows() -> list[dict[str, str]]:
     with open(_CSV_PATH, newline="", encoding="utf-8") as fh:
         reader = csv.DictReader(fh)
         return [r for r in reader if "CIS" in r.get("Framework", "")]
+
+
+def _load_csf_rows() -> list[dict[str, str]]:
+    """Load all NIST CSF rows from the bundled CSV."""
+    if not _CSV_PATH.exists():
+        click.echo(f"Controls CSV not found: {_CSV_PATH}", err=True)
+        sys.exit(1)
+    with open(_CSV_PATH, newline="", encoding="utf-8") as fh:
+        reader = csv.DictReader(fh)
+        return [r for r in reader if r.get("Framework", "").strip() == "NIST CSF"]
 
 
 def _matches_product(row: dict[str, str], solution: str) -> bool:
@@ -113,13 +138,39 @@ def _filter_framework(row: dict[str, str], ig_level: str) -> str:
     return f"CIS {ig_level.upper()}"
 
 
-def _project_row(row: dict[str, str], ig_level: str | None = None) -> dict[str, str]:
-    """Extract only the display fields from a row."""
-    result = {}
-    for field in _DISPLAY_FIELDS:
+def _extract_list(raw: str) -> list[str]:
+    """Split a comma-separated CSV field into a sorted, deduplicated list."""
+    items: list[str] = []
+    seen: set[str] = set()
+    for item in raw.split(","):
+        item = item.strip()
+        if item and item != "N/A" and item.lower() not in seen:
+            seen.add(item.lower())
+            items.append(item)
+    return items
+
+
+def _project_row(row: dict[str, str], ig_level: str | None = None, csf: bool = False) -> dict[str, Any]:
+    """Extract only the display fields from a row, plus solutions and market categories."""
+    fields = _CSF_DISPLAY_FIELDS if csf else _DISPLAY_FIELDS
+    result: dict[str, Any] = {}
+    for field in fields:
         result[field] = row.get(field, "").strip()
     if ig_level:
         result["Framework"] = _filter_framework(row, ig_level)
+
+    # Rapid7 solutions (implementation + supporting)
+    impl = row.get("Rapid7 Implementation Products (Custom Script)", "")
+    supp = row.get("Rapid7 Supporting Products (Custom Script)", "")
+    combined_products = f"{impl}, {supp}" if supp.strip() else impl
+    result["Solutions"] = _extract_list(combined_products)
+
+    # Market categories (implementation + supporting)
+    impl_tech = row.get("Implementation Market Technologies", "")
+    supp_tech = row.get("Supporting Market Technologies", "")
+    combined_tech = f"{impl_tech}, {supp_tech}" if supp_tech.strip() else impl_tech
+    result["Market Categories"] = _extract_list(combined_tech)
+
     return result
 
 
@@ -134,34 +185,48 @@ def query_cis_controls(
     ig2: bool = False,
     ig3: bool = False,
     other: bool = False,
+    dspm: bool = False,
+    grc: bool = False,
+    patching: bool = False,
+    csf: bool = False,
 ) -> list[dict[str, str]]:
-    """Query CIS controls with optional product and IG filters.
+    """Query CIS or NIST CSF controls with optional product and IG filters.
 
     Returns a list of dicts with the display fields.
     """
-    rows = _load_cis_rows()
+    if csf:
+        rows = _load_csf_rows()
+    else:
+        rows = _load_cis_rows()
 
-    # Determine IG filter
+    # Determine IG filter (only applies to CIS, not NIST CSF)
     ig_level: str | None = None
-    if ig1:
-        ig_level = "IG1"
-    elif ig2:
-        ig_level = "IG2"
-    elif ig3:
-        ig_level = "IG3"
+    if not csf:
+        if ig1:
+            ig_level = "IG1"
+        elif ig2:
+            ig_level = "IG2"
+        elif ig3:
+            ig_level = "IG3"
 
-    # Filter by IG level
-    if ig_level:
-        rows = [r for r in rows if _matches_ig(r, ig_level)]
+        # Filter by IG level
+        if ig_level:
+            rows = [r for r in rows if _matches_ig(r, ig_level)]
 
     # Filter by product
     if other:
         rows = [r for r in rows if _matches_no_product(r)]
+    elif dspm:
+        rows = [r for r in rows if _matches_product(r, "dspm")]
+    elif grc:
+        rows = [r for r in rows if _matches_product(r, "grc")]
+    elif patching:
+        rows = [r for r in rows if _matches_product(r, "patching")]
     elif solution:
         rows = [r for r in rows if _matches_product(r, solution)]
 
     # Project to display fields
-    results = [_project_row(r, ig_level) for r in rows]
+    results = [_project_row(r, ig_level, csf=csf) for r in rows]
 
     # Deduplicate by Control ID (same control can appear with different frameworks)
     seen: set[str] = set()
@@ -207,22 +272,33 @@ def make_cis_command(solution: str) -> click.Command:
     @click.option("--ig1", is_flag=True, help="Show only CIS IG1 controls.")
     @click.option("--ig2", is_flag=True, help="Show only CIS IG2 controls.")
     @click.option("--ig3", is_flag=True, help="Show only CIS IG3 controls.")
+    @click.option("--csf", is_flag=True, help="Show NIST CSF controls instead of CIS.")
     @click.option("--other", is_flag=True, help="Show controls not mapped to any Rapid7 product.")
+    @click.option("--dspm", is_flag=True, help="Show CIS controls for DSPM.")
+    @click.option("--grc", is_flag=True, help="Show CIS controls for Cyber GRC.")
+    @click.option("--patching", is_flag=True, help="Show CIS controls for Automox (Patching).")
     @click.pass_context
-    def cis_cmd(ctx, ig1, ig2, ig3, other):
+    def cis_cmd(ctx, ig1, ig2, ig3, csf, other, dspm, grc, patching):
         f"""List CIS controls relevant to {_SOLUTION_DISPLAY.get(solution, solution)}.
 
         \b
         Examples:
           r7-cli {solution} cis
           r7-cli {solution} cis --ig1
+          r7-cli {solution} cis --csf
           r7-cli -o table {solution} cis --ig2
         """
         config = ctx.obj["config"]
         if other:
-            results = query_cis_controls(ig1=ig1, ig2=ig2, ig3=ig3, other=True)
+            results = query_cis_controls(ig1=ig1, ig2=ig2, ig3=ig3, other=True, csf=csf)
+        elif dspm:
+            results = query_cis_controls(ig1=ig1, ig2=ig2, ig3=ig3, dspm=True, csf=csf)
+        elif grc:
+            results = query_cis_controls(ig1=ig1, ig2=ig2, ig3=ig3, grc=True, csf=csf)
+        elif patching:
+            results = query_cis_controls(ig1=ig1, ig2=ig2, ig3=ig3, patching=True, csf=csf)
         else:
-            results = query_cis_controls(solution=solution, ig1=ig1, ig2=ig2, ig3=ig3)
+            results = query_cis_controls(solution=solution, ig1=ig1, ig2=ig2, ig3=ig3, csf=csf)
         if not results:
             click.echo("No matching CIS controls found.", err=True)
             return
