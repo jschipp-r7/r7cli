@@ -47,3 +47,6 @@ r7-cli <solution> <subcommand> [options]
 - `SolutionGroup` in `main.py` lazily imports solution modules
 - Error hierarchy: `R7Error` → `UserInputError` (exit 1), `APIError` (exit 2), `NetworkError` (exit 3)
 - Tests use Hypothesis property-based testing with `@given` decorators
+- CIS/NIST CSF controls loaded from `controls.csv` (bundled as package data) by `cis.py`
+- Per-solution `cis` subcommand registered via `cis.make_cis_command()` in each solution module
+- `compliance` is a Click group (`invoke_without_command=True`): bare invocation runs export, `list` subcommand queries controls

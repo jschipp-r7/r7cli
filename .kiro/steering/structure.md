@@ -14,19 +14,22 @@ The workspace root is the `r7cli` Python package itself (mapped via `pyproject.t
 ├── jobs.py                # JobStore — export job persistence in ~/.r7-cli/jobs.json
 ├── agents.py              # Cross-solution asset count command (platform assets count)
 ├── extensions.py          # Rapid7 Extension Library browser (no auth required)
-├── compliance.py          # VM policy export → SQL dump pipeline
+├── compliance.py          # VM policy export → SQL dump pipeline + CIS controls list subcommand
 ├── matrix.py              # NIST CSF × CIS v8 coverage matrix with deployment-aware scoring
+├── cis.py                 # CIS/NIST CSF controls lookup — shared by per-solution `cis` subcommands and compliance list
+├── controls.csv           # Master controls CSV (CIS, NIST CSF, PCI DSS, HITRUST, MITRE) with Rapid7 product mappings
+├── product-market.mappings # Market technology → Rapid7 product mapping (tab-delimited)
 ├── parquet_filter.py      # Parquet file resolution, schema detection, filtering, auto-join for local exports
 ├── solutions/             # Per-product command modules
 │   ├── __init__.py
-│   ├── vm.py              # InsightVM — health, scans, engines, exports, assets, vulns, sites
-│   ├── siem.py            # InsightIDR — health, logs, agents, investigations, detections
-│   ├── asm.py             # Surface Command — Cypher queries, connectors
-│   ├── drp.py             # Digital Risk Protection — alerts, threats, takedowns, risk score
+│   ├── vm.py              # InsightVM — health, scans, engines, exports, assets, vulns, sites, cis
+│   ├── siem.py            # InsightIDR — health, logs, agents, investigations, detections, cis
+│   ├── asm.py             # Surface Command — Cypher queries, connectors, cis
+│   ├── drp.py             # Digital Risk Protection — alerts, threats, takedowns, risk score, cis
 │   ├── platform.py        # Platform — validate, search, users, orgs, products, roles, credentials
-│   ├── appsec.py          # InsightAppSec — apps, scans, vulns, configs, templates
-│   ├── cnapp.py           # InsightCloudSec — IaC scans, AWS keys/roles/accounts, findings
-│   ├── soar.py            # InsightConnect — workflows, jobs, artifacts, snippets
+│   ├── appsec.py          # InsightAppSec — apps, scans, vulns, configs, templates, cis
+│   ├── cnapp.py           # InsightCloudSec — IaC scans, AWS keys/roles/accounts, findings, cis
+│   ├── soar.py            # InsightConnect — workflows, jobs, artifacts, snippets, cis
 │   └── stub.py            # Stub group factory for not-yet-implemented solutions
 ├── tests/
 │   ├── __init__.py
@@ -43,3 +46,5 @@ The workspace root is the `r7cli` Python package itself (mapped via `pyproject.t
 - Helper functions `_extract_items()`, `_extract_item_id()`, `_resolve_body()` are duplicated across solution modules (not shared)
 - Interactive selection (`--auto` / `-a`) uses `questionary` for terminal prompts
 - Polling mode (`--auto` with `-i`) tracks seen IDs and prints only new entries
+- Every solution group registers a `cis` subcommand via `cis.make_cis_command()` for CIS/NIST CSF controls lookup
+- `compliance.py` is a Click group (`invoke_without_command=True`): bare invocation runs the export pipeline, `list` subcommand queries CIS/NIST CSF controls

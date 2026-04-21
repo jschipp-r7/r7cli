@@ -6,6 +6,7 @@ inclusion: always
 
 r7-cli is a CLI for the Rapid7 Command Platform. It wraps multiple security products behind a single `r7-cli SOLUTION SUBCOMMAND` interface.
 
+
 ## Solutions
 
 | CLI name     | Product              | Auth        | Notes                                      |
@@ -76,6 +77,34 @@ All formatting goes through `output.py:format_output()`. Do not bypass it.
 
 - `--auto` / `-a`: uses `questionary` to present an interactive picker when a command needs an entity ID.
 - `--auto` combined with `--interval` / `-i`: polling mode that re-fetches on an interval, tracking seen IDs and printing only new entries.
+
+## CIS & NIST CSF Controls Lookup
+
+Every solution group (`vm`, `siem`, `asm`, `drp`, `appsec`, `cnapp`, `soar`) registers a `cis` subcommand via `cis.make_cis_command(solution)`. The `platform compliance list` command provides the same functionality with per-product flags.
+
+Data source: `controls.csv` (bundled with the package) — the master controls spreadsheet with columns for Framework, Version, CIS Asset Type, NIST Category, Control ID, Control Description, Implementation Market Technologies, Rapid7 Implementation Products, Supporting Market Technologies, Rapid7 Supporting Products.
+
+Product matching uses the "Rapid7 Implementation Products (Custom Script)" and "Rapid7 Supporting Products (Custom Script)" CSV columns. The `_SOLUTION_PRODUCTS` dict in `cis.py` maps CLI solution names to product strings:
+
+| Flag / Solution | CSV Product Match |
+|----------------|-------------------|
+| `--vm` / `vm` | insightVM, Nexpose |
+| `--siem` / `siem` | insightIDR |
+| `--asm` / `asm` | Surface Command |
+| `--drp` / `drp` | DRP, DRPS, Threat Command |
+| `--appsec` / `appsec` | insightAppSec |
+| `--cnapp` / `cnapp` | insightCloudSec |
+| `--soar` / `soar` | insightConnect |
+| `--dspm` | DSPM Add-On |
+| `--grc` | Cyber GRC Add-On |
+| `--patching` | Automox Add-On |
+
+Framework filters:
+- `--ig1`, `--ig2`, `--ig3` — filter CIS rows by Implementation Group (from the Framework field)
+- `--csf` — switch to NIST CSF rows instead of CIS (uses "NIST Category" instead of "CIS Asset Type")
+- `--other` — show controls not mapped to any Rapid7 product (excludes DSPM, GRC, and Patching)
+
+Each result includes: Framework, Version, CIS Asset Type (or NIST Category for CSF), Control ID, Control Description, Solutions (array), Market Categories (array).
 
 ## Bulk Exports & Parquet
 

@@ -270,3 +270,4 @@ Hypothesis is already listed in `[project.optional-dependencies] dev` in `pyproj
 - `--solution` flag added to show product names per cell
 - `build_recommendations()` function added for product recommendations
 - Backward-compat alias `security_checklist = matrix` removed
+- Per-solution `cis` subcommand added to every solution group via `cis.make_cis_command()` — lists CIS/NIST CSF controls from `controls.csv` with product, IG, and framework filters

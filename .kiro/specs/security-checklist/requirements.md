@@ -136,3 +136,4 @@ Add a top-level `security-checklist` command to the r7-cli tool, invoked as `r7-
 - `--solution` flag added to show product names per cell
 - `build_recommendations()` function added for product recommendations
 - Backward-compat alias `security_checklist = matrix` removed
+- Per-solution `cis` subcommand added to every solution group (vm, siem, asm, drp, appsec, cnapp, soar) via `cis.make_cis_command()` — lists CIS/NIST CSF controls relevant to each product from `controls.csv`

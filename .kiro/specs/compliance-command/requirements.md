@@ -152,3 +152,6 @@ The export API response contains a `result` array where each entry has a `prefix
 - TSV format support added to `output.py` (shared across all commands)
 - `pyarrow` added as a required dependency
 - File naming uses `_short_iso_timestamp()` helper in `vm.py`'s `_download_parquet_urls`
+- `compliance` converted from a single Click command to a Click group with `invoke_without_command=True` — bare invocation still runs the export pipeline
+- `compliance list` subcommand added: queries CIS/NIST CSF controls from `controls.csv` via `cis.py`, supports per-product flags (`--vm`, `--siem`, `--asm`, `--drp`, `--appsec`, `--cnapp`, `--soar`, `--dspm`, `--grc`, `--patching`), IG filters (`--ig1`, `--ig2`, `--ig3`), `--csf` for NIST CSF, and `--other` for unmapped controls
+- Each result includes Solutions and Market Categories arrays extracted from the CSV

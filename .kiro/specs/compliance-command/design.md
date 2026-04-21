@@ -254,3 +254,7 @@ Hypothesis is already listed in `[project.optional-dependencies] dev` in `pyproj
 - TSV format support added to `output.py` (shared across all commands)
 - `pyarrow` added as a required dependency
 - File naming uses `_short_iso_timestamp()` helper in `vm.py`'s `_download_parquet_urls`
+- `compliance` converted from `@click.command` to `@click.group(invoke_without_command=True)` — bare invocation preserves the export pipeline behavior
+- `compliance list` subcommand added for CIS/NIST CSF controls lookup via `cis.py`
+- `compliance list` supports product flags (`--vm`, `--siem`, `--asm`, `--drp`, `--appsec`, `--cnapp`, `--soar`, `--dspm`, `--grc`, `--patching`), IG filters (`--ig1`/`--ig2`/`--ig3`), `--csf` for NIST CSF framework, and `--other` for unmapped controls
+- Results include Solutions and Market Categories arrays from the CSV
