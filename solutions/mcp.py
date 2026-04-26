@@ -34,6 +34,10 @@ _KIRO_MCP_CONFIG = Path(".kiro/settings/mcp.json")
 # Default timeout for reading MCP responses (seconds)
 _MCP_READ_TIMEOUT = 30
 
+# Longer timeout for tool calls that hit the Rapid7 platform API
+# (start_rapid7_export can take 60-90s while the platform queues the job)
+_MCP_TOOL_TIMEOUT = 120
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -85,6 +89,7 @@ def _run_mcp_stdio(config: Config, request: dict) -> dict:
     _log_debug(config, f"API key: {'set (' + config.api_key[:4] + '…)' if config.api_key else 'NOT SET'}")
 
     timeout = config.timeout or _MCP_READ_TIMEOUT
+    tool_timeout = config.timeout or _MCP_TOOL_TIMEOUT
 
     proc = subprocess.Popen(
         [server_cmd],
@@ -134,7 +139,7 @@ def _run_mcp_stdio(config: Config, request: dict) -> dict:
             **request,
         }
         _send_message(proc, tool_request, config)
-        result = _read_response(proc, config, timeout=timeout)
+        result = _read_response(proc, config, timeout=tool_timeout)
         _log_verbose(config, f"Tool response received ✓")
         _log_debug(config, f"Response: {json.dumps(result, indent=2)}")
 
@@ -146,7 +151,7 @@ def _run_mcp_stdio(config: Config, request: dict) -> dict:
     except TimeoutError:
         _drain_stderr(proc, config)
         raise R7Error(
-            f"MCP server did not respond within {timeout}s. "
+            f"MCP server did not respond within {tool_timeout}s. "
             f"Use --timeout to increase, or check server logs with: "
             f"r7-cli vm export mcp server status",
             exit_code=2,
