@@ -83,10 +83,12 @@ def _register_platform_subgroups():
     from r7cli.extensions import extensions as extensions_group
     from r7cli.compliance import compliance as compliance_cmd
     from r7cli.matrix import matrix as matrix_group
+    from r7cli.status import status as status_cmd
     platform.add_command(assets_group, "assets")
     platform.add_command(extensions_group, "extensions")
     platform.add_command(compliance_cmd, "compliance")
     platform.add_command(matrix_group, "matrix")
+    platform.add_command(status_cmd, "status")
 
 _register_platform_subgroups()
 

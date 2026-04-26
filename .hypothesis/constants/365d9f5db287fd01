@@ -1,0 +1,4 @@
+# file: /Users/jschipp/repos/r7cli/client.py
+# hypothesis_version: 6.151.12
+
+[401, 429, 1000, '-H', '-X', '-d', '-s', '-u', 'Content-Type', 'GET', 'HEAD', 'POST', 'X-Api-Key', 'X-RateLimit-Reset', '[REDACTED]', 'application/json', 'curl', 'error', 'message', '|']

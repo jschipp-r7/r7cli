@@ -1,0 +1,4 @@
+# file: /Users/jschipp/repos/r7cli/models.py
+# hypothesis_version: 6.151.12
+
+['ACTIVE', 'APP', 'ASSET', 'SCAN', 'SCHEDULE', 'VULNERABILITY', 'ap', 'ap-south-2', 'appsec', 'asm', 'au', 'ca', 'cnapp', 'csv', 'drp', 'eu', 'json', 'me-central-1', 'platform', 'siem', 'soar', 'sql', 'table', 'tsv', 'us', 'us1', 'us2', 'us3', 'vm']

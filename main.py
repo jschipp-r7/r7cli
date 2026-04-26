@@ -100,13 +100,15 @@ class SolutionGroup(click.MultiCommand):
     """Dynamic multi-command that routes to per-solution Click groups."""
 
     def list_commands(self, ctx: click.Context) -> list[str]:
-        return sorted(VALID_SOLUTIONS | {"validate"})
+        return sorted(VALID_SOLUTIONS | {"validate", "tldr"})
 
     def get_command(self, ctx: click.Context, name: str) -> click.Command | None:
         if name == "help":
             click.echo(ctx.parent.get_help() if ctx.parent else ctx.get_help())
             ctx.exit(0)
             return None
+        if name == "tldr":
+            return _tldr_cmd
         if name == "validate":
             return _validate_cmd
         if name in STUB_SOLUTIONS:
@@ -145,6 +147,83 @@ class SolutionGroup(click.MultiCommand):
 
 CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"]}
 
+# ---------------------------------------------------------------------------
+# ANSI color banner
+# ---------------------------------------------------------------------------
+
+_BANNER = """\
+\033[38;5;208m ██████╗ \033[38;5;196m███████╗\033[0m     \033[38;5;33m ██████╗██╗     ██╗\033[0m
+\033[38;5;208m ██╔══██╗\033[38;5;196m╚════██║\033[0m     \033[38;5;33m██╔════╝██║     ██║\033[0m
+\033[38;5;208m ██████╔╝\033[38;5;196m    ██╔╝\033[0m     \033[38;5;33m██║     ██║     ██║\033[0m
+\033[38;5;208m ██╔══██╗\033[38;5;196m   ██╔╝ \033[0m     \033[38;5;33m██║     ██║     ██║\033[0m
+\033[38;5;208m ██║  ██║\033[38;5;196m   ██║  \033[0m\033[38;5;245m ─── \033[0m\033[38;5;33m╚██████╗███████╗██║\033[0m
+\033[38;5;208m ╚═╝  ╚═╝\033[38;5;196m   ╚═╝  \033[0m     \033[38;5;33m ╚═════╝╚══════╝╚═╝\033[0m
+\033[38;5;245m  Rapid7 Command Platform\033[0m"""
+
+# ---------------------------------------------------------------------------
+# TLDR quick-reference
+# ---------------------------------------------------------------------------
+
+# ANSI helpers
+_H = "\033[1;97m"   # bold white — headers
+_C = "\033[38;5;33m"  # blue — commands
+_G = "\033[38;5;245m" # gray — comments
+_R = "\033[0m"        # reset
+
+_TLDR = f"""{_BANNER}
+
+{_H}Getting Started{_R}
+  {_G}# Set your API key (or use -k){_R}
+  export R7_X_API_KEY="your-key"
+
+{_H}Validate{_R}
+  {_C}r7-cli validate{_R}                                    {_G}# Validate API key{_R}
+
+{_H}InsightVM{_R}
+  {_C}r7-cli vm health{_R}                                   {_G}# Print VM health info{_R}
+  {_C}r7-cli vm scans list --days 7{_R}                      {_G}# List scans ran in last 7 days{_R}
+  {_C}r7-cli vm export vulnerabilities --auto{_R}             {_G}# Bulk export all vulnerabilities{_R}
+
+{_H}InsightIDR / SIEM{_R}
+  {_C}r7-cli siem health{_R}                                  {_G}# Print SIEM health info{_R}
+  {_C}r7-cli siem logs query -n "Asset Authentication" --time-range "Last 7 days"{_R}  {_G}# Query logs{_R}
+  {_C}r7-cli siem investigations list --status OPEN --all-pages{_R}  {_G}# List all open investigations{_R}
+
+{_H}Surface Command / ASM{_R}
+  {_C}r7-cli asm list{_R}
+  {_C}r7-cli asm execute --query 'MATCH (a:Asset) RETURN a LIMIT 10'{_R}
+  {_C}r7-cli asm connectors list{_R}
+
+{_H}Digital Risk Protection{_R}
+  {_C}r7-cli drp validate{_R}                                {_G}# Validate DRP specific API key{_R}
+  {_C}r7-cli drp alerts list --severity High --days 30{_R}   {_G}# List High severity DRP alerts{_R}
+  {_C}r7-cli drp risk-score{_R}                              {_G}# Print organizational risk-score{_R}
+
+{_H}Platform{_R}
+  {_C}r7-cli platform products list{_R}                      {_G}# List licensed platform products{_R}
+  {_C}r7-cli platform users list{_R}                         {_G}# List platform users{_R}
+  {_C}r7-cli platform assets count{_R}                       {_G}# List licensed asset counts{_R}
+
+{_H}Compliance & Coverage{_R}
+  {_C}r7-cli platform compliance{_R}                          {_G}# SQL dump of VM policies{_R}
+  {_C}r7-cli platform compliance list --vm{_R}                {_G}# CIS controls for InsightVM{_R}
+  {_C}r7-cli platform matrix rapid7 --reality{_R}             {_G}# coverage matrix adjusted for deployment{_R}
+
+{_H}CIS Controls (per product){_R}
+  {_C}r7-cli vm cis --ig1{_R}                                 {_G}# IG1 controls for InsightVM{_R}
+  {_C}r7-cli siem cis{_R}                                     {_G}# all CIS controls for IDR{_R}
+  {_C}r7-cli asm cis --csf{_R}                                {_G}# NIST CSF controls for ASM{_R}
+
+{_H}Output Tricks{_R}
+  {_C}r7-cli -o table platform products list{_R}              {_G}# table format{_R}
+  {_C}r7-cli -s platform products list{_R}                    {_G}# compact one-liner JSON{_R}
+  {_C}r7-cli -c siem logs query -n "DNS Query"{_R}            {_G}# use cached response{_R}
+
+{_H}More help{_R}
+  {_C}r7-cli SOLUTION --help{_R}                              {_G}# e.g. r7-cli vm --help{_R}
+  {_C}r7-cli SOLUTION SUBCOMMAND --help{_R}                   {_G}# e.g. r7-cli vm scans list --help{_R}
+"""
+
 
 @click.command(cls=SolutionGroup, context_settings=CONTEXT_SETTINGS)
 @click.option("-r", "--region", default=None, help="Region code (default: us).")
@@ -158,21 +237,10 @@ CONTEXT_SETTINGS = {"help_option_names": ["-h", "--help"]}
 @click.option("-t", "--timeout", type=int, default=30, help="Request timeout in seconds (default: 30).")
 @click.option("--search-fields", "search", default=None, help="Search JSON response for a field name and print matching values.")
 @click.option("-s", "--short", is_flag=True, help="Compact single-line output.")
+@click.option("--tldr", is_flag=True, is_eager=True, expose_value=False, callback=lambda ctx, param, value: (click.echo(_TLDR), ctx.exit(0)) if value else None, help="Show quick-reference examples.")
 @click.pass_context
 def cli(ctx, region, verbose, api_key, output_format, use_cache, limit, debug, drp_token, timeout, search, short):
-    """r7-cli: The Rapid7 Command Platform at Your Fingertips
-
-    Usage: r7-cli SOLUTION [OPTIONS] SUBCOMMAND [ARGS]
-
-    Solutions: siem, vm, cnapp, asm, appsec, drp, platform, soar
-
-    Environment variables:
-      R7_X_API_KEY   API key for Insight Platform
-      R7_REGION      Region code (default: us)
-      R7_DRP_TOKEN   DRP API token
-
-    Supported regions: us, us1, us2, us3, ca, eu, au, ap, me-central-1, ap-south-2
-    """
+    """placeholder"""
     try:
         ctx.ensure_object(dict)
         config = resolve_config(
@@ -192,6 +260,22 @@ def cli(ctx, region, verbose, api_key, output_format, use_cache, limit, debug, d
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
+
+
+cli.help = (
+    "\b\n"
+    + _BANNER + "\n\n"
+    "Usage: r7-cli SOLUTION [OPTIONS] SUBCOMMAND [ARGS]\n\n"
+    "Solutions: siem, vm, cnapp, asm, appsec, drp, platform, soar\n\n"
+    "\b\n"
+    "Environment variables:\n"
+    "  R7_X_API_KEY   API key for Insight Platform\n"
+    "  R7_REGION      Region code (default: us)\n"
+    "  R7_DRP_TOKEN   DRP API token\n\n"
+    "\b\n"
+    "Supported regions:\n"
+    "  us, us1, us2, us3, ca, eu, au, ap, me-central-1, ap-south-2"
+)
 
 
 # ---------------------------------------------------------------------------
@@ -215,3 +299,14 @@ def _validate_cmd(ctx):
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
+
+
+# ---------------------------------------------------------------------------
+# Top-level shortcut: r7-cli tldr
+# ---------------------------------------------------------------------------
+
+@click.command("tldr")
+@click.pass_context
+def _tldr_cmd(ctx):
+    """Show quick-reference examples for common commands."""
+    click.echo(_TLDR)

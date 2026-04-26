@@ -1,0 +1,4 @@
+# file: /Users/jschipp/repos/r7cli/output.py
+# hypothesis_version: 6.151.12
+
+[',', ':', 'base64', 'count', 'created', 'csv', 'cvss', 'cvssScore', 'cvss_score', 'date', 'description', 'domain', 'grid', 'hash', 'hostName', 'hostname', 'id', 'ip', 'json', 'keys', 'mac', 'matches', 'message', 'name', 'organization_name', 'product_code', 'riskScore', 'risk_score', 'severity', 'status', 'table', 'time', 'timestamp', 'title', 'token', 'tsv', 'type', 'url', 'uuid', 'value', 'version', '…']

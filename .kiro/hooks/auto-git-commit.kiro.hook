@@ -1,0 +1,13 @@
+{
+  "enabled": true,
+  "name": "Auto Git Commit",
+  "description": "Automatically commits all changes to git after the agent stops. The commit title is a brief summary of the changes, and the commit body includes the original prompt used.",
+  "version": "1",
+  "when": {
+    "type": "agentStop"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Stage all modified and new files with `git add -A`, then create a git commit. The commit message should have: 1) A brief summary title (max 72 chars) describing what was changed, and 2) A body that includes the user's original prompt/request that triggered this work. Format: first line is the title, then a blank line, then 'Prompt: <the user prompt>'. Do not push. If there are no changes to commit, do nothing."
+  }
+}

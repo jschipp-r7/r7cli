@@ -1,0 +1,70 @@
+CAASM	Surface Command, Vector Command, Exposure Command Essentials, Exposure Command Advanced, Exposure Command Ultimate, Incident Command Essentials, Incident Command Advanced, Incident Command Ultimate	Surface Command, Vector Command, Exposure Command Essentials, Exposure Command Advanced, Exposure Command Ultimate, Incident Command Essentials, Incident Command Advanced, Incident Command Ultimate
+EASM	Surface Command, Vector Command, Exposure Command Essentials, Exposure Command Advanced, Exposure Command Ultimate, Incident Command Essentials, Incident Command Advanced, Incident Command Ultimate	Surface Command, Vector Command, insightVM, Nexpose, Exposure Command Essentials, Exposure Command Advanced, Exposure Command Ultimate, Incident Command Essentials, Incident Command Advanced, Incident Command Ultimate
+VM	insightVM, Nexpose, Exposure Command Essentials, Exposure Command Advanced, Exposure Command Ultimate, Managed Threat Complete	insightVM, Nexpose, Exposure Command Essentials, Exposure Command Advanced, Exposure Command, Ultimate, Managed Threat Complete, Managed Threat Complete Advanced, Managed Threat Completed Ultimate, insightAppSec, Vector Command
+CNAPP	insightCloudSec, Exposure Command Ultimate	insightCloudSec, Exposure Command Ultimate
+DSPM	DSPM Add-On	DSPM Add-On
+SIEM	insightIDR, Incident Command Essentials, Incident Command Advanced, Incident Command Ultimate, MDR, Managed Threat Complete, Managed Threat Complete Advanced, Managed Threat Completed Ultimate	insightIDR, Incident Command Essentials, Incident Command Advanced, Incident Command Ultimate, MDR, Managed Threat Complete, Managed Threat Complete Advanced, Managed Threat Completed Ultimate
+EDR	insightIDR, Incident Command Essentials, Incident Command Advanced, Incident Command Ultimate, MDR, Managed Threat Complete, Managed Threat Complete Advanced, Managed Threat Completed Ultimate	insightIDR, Incident Command Essentials, Incident Command Advanced, Incident Command Ultimate, MDR, Managed Threat Complete, Managed Threat Complete Advanced, Managed Threat Completed Ultimate
+EPP	Ransomware Prevention Add-On	Ransomware Prevention, insightIDR, Incident Command Essentials, Incident Command Advanced, Incident Command Ultimate, MDR, Managed Threat Complete
+NGAV	NGAV Add-On	NGAV Add-On, insightIDR, Incident Command Ultimate, MDR, Managed Threat Complete, Managed Threat Complete Advanced, Managed Threat Completed Ultimate
+HIDS	insightIDR, Incident Command Essentials, Incident Command Advanced, Incident Command Ultimate, MDR, Managed Threat Complete, Managed Threat Complete Advanced, Managed Threat Completed Ultimate	insightIDR, Incident Command Essentials, Incident Command Advanced, Incident Command Ultimate, MDR, Managed Threat Complete, Managed Threat Complete Advanced, Managed Threat Completed Ultimate
+HIPS	insightIDR, Incident Command Essentials, Incident Command Advanced, Incident Command Ultimate, MDR, Managed Threat Complete, Managed Threat Complete Advanced, Managed Threat Completed Ultimate	insightIDR, Incident Command Essentials, Incident Command Advanced, Incident Command Ultimate, MDR, Managed Threat Complete, Managed Threat Complete Advanced, Managed Threat Completed Ultimate
+AM	Asset Management	Surface Command, Vector Command, Exposure Command Essentials, Exposure Command Advanced, Exposure Command Ultimate, Incident Command Essentials, Incident Command Advanced, Incident Command Ultimate
+MDM	Mobile Device Management	Surface Command, Vector Command, Exposure Command Essentials, Exposure Command Advanced, Exposure Command Ultimate, Incident Command Essentials, Incident Command Advanced, Incident Command Ultimate
+PM	Automox Add-On	Automox Add-On
+CM	Puppet, Chef, Ansible, Active Directory	N/A
+IaaS	Cloud Service Providers	Surface Command, Vector Command, Exposure Command Essentials, Exposure Command Advanced, Exposure Command Ultimate, Incident Command Essentials, Incident Command Advanced, Incident Command Ultimate
+PaaS	Cloud Service Providers	Surface Command, Vector Command, Exposure Command Essentials, Exposure Command Advanced, Exposure Command Ultimate, Incident Command Essentials, Incident Command Advanced, Incident Command Ultimate
+Infrastructure	Cloud Service Providers	Surface Command, Vector Command, Exposure Command Essentials, Exposure Command Advanced, Exposure Command Ultimate, Incident Command Essentials, Incident Command Advanced, Incident Command Ultimate
+GRC	Cyber GRC Add-On	Cyber GRC Add-On
+Compliance	Cyber GRC Add-On, Surface Command, insightVM, insightCloudSec	Cyber GRC Add-On, Surface Command, insightVM, insightCloudSec
+NTA	NTA Add-On, insightIDR, Incident Command Ultimate, MDR, Managed Threat Complete, Managed Threat Complete Advanced, Managed Threat Completed Ultimate	NTA Add-On, insightIDR, Incident Command Ultimate, MDR, Managed Threat Complete, Managed Threat Complete Advanced, Managed Threat Completed Ultimate
+NSM	NTA Add-On, insightIDR, Incident Command Ultimate, MDR, Managed Threat Complete, Managed Threat Complete Advanced, Managed Threat Completed Ultimate	NTA Add-On, insightIDR, Incident Command Ultimate, MDR, Managed Threat Complete, Managed Threat Complete Advanced, Managed Threat Completed Ultimate
+IPS	Intrusion Protection System	N/A
+IDS	NTA Add-On, insightIDR, Incident Command Ultimate, MDR, Managed Threat Complete, Managed Threat Complete Advanced, Managed Threat Completed Ultimate	NTA Add-On, insightIDR, Incident Command Ultimate, MDR, Managed Threat Complete, Managed Threat Complete Advanced, Managed Threat Completed Ultimate
+MDR	MDR, Managed Threat Complete, Managed Threat Complete Advanced, Managed Threat Completed Ultimate	MDR, Managed Threat Complete, Managed Threat Complete Advanced, Managed Threat Completed Ultimate
+DAST	insightAppSec	insightAppSec, Surface Command, Vector Command, Exposure Command Essentials, Exposure Command Advanced, Exposure Command Ultimate, Incident Command Essentials, Incident Command Advanced, Incident Command Ultimate
+SAST	Static Application Security Testing	Surface Command, Vector Command, Exposure Command Essentials, Exposure Command Advanced, Exposure Command Ultimate, Incident Command Essentials, Incident Command Advanced, Incident Command Ultimate
+WAF	Web Application Firewall	Web Application Firewall
+AGW	Application Gateway	Application Gateway
+Web Proxy	Web Proxy	Web Proxy
+SASE	Secure Access Service Edge	N/A
+UAT	User Awareness Training	Surface Command, Vector Command, Exposure Command Essentials, Exposure Command Advanced, Exposure Command Ultimate, Incident Command Essentials, Incident Command Advanced, Incident Command Ultimate, User Awareness Training
+PT	Pentesting Services, Vector Command	Pentesting Services, Vector Command
+BAS	Vector Command	Vector Command
+DRP	DRP, DRPS	DRP, DRPS
+FIM	insightIDR, Incident Command Essentials, Incident Command Advanced, Incident Command Ultimate, MDR, Managed Threat Complete, Managed Threat Complete Advanced, Managed Threat Completed Ultimate	insightIDR, Incident Command Essentials, Incident Command Advanced, Incident Command Ultimate, MDR, Managed Threat Complete, Managed Threat Complete Advanced, Managed Threat Completed Ultimate
+CMDB	Surface Command,	Surface Command, Vector Command, Exposure Command Essentials, Exposure Command Advanced, Exposure Command Ultimate, Incident Command Essentials, Incident Command Advanced, Incident Command Ultimate
+IAM	Identity & Access Management	Surface Command, Vector Command, Exposure Command Essentials, Exposure Command Advanced, Exposure Command Ultimate, Incident Command Essentials, Incident Command Advanced, Incident Command Ultimate
+IDP	Identity Provider	Surface Command, Vector Command, Exposure Command Essentials, Exposure Command Advanced, Exposure Command Ultimate, Incident Command Essentials, Incident Command Advanced, Incident Command Ultimate
+SCA	Source Code Analysis	Source Code Analysis
+CSP	Cloud Service Provider	Surface Command, Vector Command, Exposure Command Essentials, Exposure Command Advanced, Exposure Command Ultimate, Incident Command Essentials, Incident Command Advanced, Incident Command Ultimate
+DLP	Data Loss Prevention	Data Loss Prevention
+FW	Firewall	insightVM, Nexpose, Exposure Command Essentials, Exposure Command Advanced, Exposure Command, Ultimate, Vector Command, MDR, Managed Threat Complete, Managed Threat Complete Advanced, Managed Threat Completed Ultimate
+SOAR	insightConnect, Exposure Command Essentials, Exposure Command Advanced, Exposure Command Ultimate, Incident Command Essentials, Incident Command Advanced, Incident Command Ultimate, MDR, Managed Threat Complete, Managed Threat Complete Advanced, Managed Threat Completed Ultimate	insightConnect, Exposure Command Essentials, Exposure Command Advanced, Exposure Command Ultimate, Incident Command Essentials, Incident Command Advanced, Incident Command Ultimate, MDR, Managed Threat Complete, Managed Threat Complete Advanced, Managed Threat Completed Ultimate
+DM	Data Management	DSPM Add-On
+IGA	Identity Governance & Access	Identity Governance & Access
+SSPM	SaaS Security Posture Management	Surface Command, Vector Command, Exposure Command Essentials, Exposure Command Advanced, Exposure Command Ultimate, Incident Command Essentials, Incident Command Advanced, Incident Command Ultimate
+DS	Directory Services	Directory Services
+ITDR	insightIDR, Incident Command Essentials, Incident Command Advanced, Incident Command Ultimate, MDR, Managed Threat Complete, Managed Threat Complete Advanced, Managed Threat Completed Ultimate	insightIDR, Incident Command Essentials, Incident Command Advanced, Incident Command Ultimate, MDR, Managed Threat Complete, Managed Threat Complete Advanced, Managed Threat Completed Ultimate
+ISPM	Surface Command, Vector Command, Exposure Command Essentials, Exposure Command Advanced, Exposure Command Ultimate, Incident Command Essentials, Incident Command Advanced, Incident Command Ultimate	Surface Command, Vector Command, Exposure Command Essentials, Exposure Command Advanced, Exposure Command Ultimate, Incident Command Essentials, Incident Command Advanced, Incident Command Ultimate
+AISPM	AI Security Posture Management	AI Security Posture Management
+BDR	Browser Detection & Response	Browser Detection & Response
+HRM	Human Risk Management	Human Risk Management
+Browser	Browser	insightVM, Nexpose, Exposure Command Essentials, Exposure Command Advanced, Exposure Command, Ultimate, MDR, Managed Threat Complete, Managed Threat Complete Advanced, Managed Threat Completed Ultimate
+TIP	Threat Command, Intelligence Hub	Threat Command, Intelligence Hub
+Software	insightVM	Surface Command, Vector Command, Exposure Command Essentials, Exposure Command Advanced, Exposure Command Ultimate, Incident Command Essentials, Incident Command Advanced, Incident Command Ultimate
+DFIR	Velociraptor, Hosted Velociraptor Add-On, Incident Command Ultimate	insightIDR, Incident Command Essentials, Incident Command Advanced, Incident Command Ultimate, Hosted Velociraptor Add-On, MDR, Managed Threat Complete, Managed Threat Complete Advanced, Managed Threat Completed Ultimate
+AppSec	insightAppSec, Exposure Command Ultimate	
+IR	insightIDR, Incident Command Essentials, Incident Command Advanced, Incident Command Ultimate, MDR, Managed Threat Complete, Managed Threat Complete Advanced, Managed Threat Completed Ultimate, Velociraptor, Hosted Velociraptor Add-On, NTA Add-On, NGAV Add-On	
+ID	N/A	Surface Command, Vector Command, Exposure Command Essentials, Exposure Command Advanced, Exposure Command Ultimate, Incident Command Essentials, Incident Command Advanced, Incident Command Ultimate
+EM	insightVM, Nexpose, Surface Command, Vector Command, Exposure Command Essentials, Exposure Command Advanced, Exposure Command Ultimate, Managed Threat Complete, insightCloudSec, insightAppSec	
+CR	Container Runtime Add-On, Exposure Command Ultimate	
+PKI	Public Key Infrastructure	Public Key Infrastructure
+XDR	insightIDR, Incident Command Essentials, Incident Command Advanced, Incident Command Ultimate, MDR, Managed Threat Complete, Managed Threat Complete Advanced, Managed Threat Completed Ultimate, Velociraptor, Hosted Velociraptor Add-On, NTA Add-On, NGAV Add-On, Ransware Prevention Add-On	
+ES	Endpoint Security	
+CSP	insightCloudSec, Exposure Command Ultimate	
+		
+		
+		
+		
