@@ -475,6 +475,13 @@ def mcp_server_check(ctx):
         click.echo(f"Config: {_KIRO_MCP_CONFIG} (not configured)")
         click.echo("  Run: r7-cli vm export mcp server setup")
 
+    # Warn early if no API key is available
+    if not config.api_key:
+        click.echo("")
+        click.echo("  ⚠ No API key found. Set R7_X_API_KEY or pass -k.")
+        click.echo("    The server will likely fail to initialize without it.")
+        click.echo("")
+
     click.echo("")
     _run_connectivity_test(config, server_cmd)
 
@@ -533,7 +540,7 @@ def _run_connectivity_test(config: Config, server_cmd: str) -> None:
         click.echo("  ✗ Server did not respond within 15s.")
         click.echo("")
         click.echo("  Possible causes:")
-        click.echo("    • RAPID7_API_KEY is not set or invalid")
+        click.echo("    • R7_X_API_KEY is not set or invalid (pass via -k or env var)")
         click.echo("    • Server is hanging during database initialization")
         click.echo("    • Network issue reaching Rapid7 APIs")
         click.echo("")
