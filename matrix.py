@@ -4,6 +4,7 @@ Fetches licensed Rapid7 products and renders a NIST CSF × CIS v8 coverage matri
 """
 from __future__ import annotations
 
+import json
 import sys
 from typing import Any
 
@@ -569,11 +570,19 @@ def check_deployments(client: R7Client, config: Config) -> dict[str, bool]:
 # Click commands
 # ---------------------------------------------------------------------------
 
-@click.group("matrix")
+@click.group("matrix", invoke_without_command=True)
+@click.option("-p", "--percent", is_flag=True, help="Show coverage percentages instead of checkmarks.")
+@click.option("--solution", is_flag=True, help="Show Rapid7 solution names mapped to each cell.")
+@click.option("--reality/--no-reality", "--deployment/--no-deployment", default=False,
+              help="Adjust percentages based on actual deployment state.")
+@click.option("--scoring", is_flag=True, help="Print the scoring rules and exit.")
+@click.option("--json", "json_output", is_flag=True, help="Output the matrix as JSON.")
 @click.pass_context
-def matrix(ctx: click.Context) -> None:
+def matrix(ctx: click.Context, percent: bool, solution: bool, reality: bool, scoring: bool, json_output: bool) -> None:
     """Generate a NIST CSF × CIS v8 defender coverage matrix based on the Rapid7 products you're licensed for."""
-    pass
+    if ctx.invoked_subcommand is not None:
+        return
+    _run_matrix(ctx, percent=percent, solution=solution, reality=reality, scoring=scoring, json_output=json_output)
 
 
 @matrix.command("rapid7")
@@ -582,9 +591,15 @@ def matrix(ctx: click.Context) -> None:
 @click.option("--reality/--no-reality", "--deployment/--no-deployment", default=False,
               help="Adjust percentages based on actual deployment state.")
 @click.option("--scoring", is_flag=True, help="Print the scoring rules and exit.")
+@click.option("--json", "json_output", is_flag=True, help="Output the matrix as JSON.")
 @click.pass_context
-def rapid7(ctx: click.Context, percent: bool, solution: bool, reality: bool, scoring: bool) -> None:
+def rapid7(ctx: click.Context, percent: bool, solution: bool, reality: bool, scoring: bool, json_output: bool) -> None:
     """Display a NIST CSF × CIS v8 product coverage matrix."""
+    _run_matrix(ctx, percent=percent, solution=solution, reality=reality, scoring=scoring, json_output=json_output)
+
+
+def _run_matrix(ctx: click.Context, *, percent: bool, solution: bool, reality: bool, scoring: bool, json_output: bool) -> None:
+    """Shared implementation for the matrix command."""
     if scoring:
         click.echo(SCORING_RULES)
         return
@@ -624,6 +639,18 @@ def rapid7(ctx: click.Context, percent: bool, solution: bool, reality: bool, sco
             reductions = compute_reductions(deployment_status)
             adjusted_mapping = apply_reductions(CELL_PERCENT_MAPPING, reductions)
 
+        rows = build_matrix(licensed, percent=percent, solution=solution, adjusted_mapping=adjusted_mapping)
+
+        if json_output:
+            matrix_data: list[dict[str, str]] = []
+            for row in rows:
+                entry: dict[str, str] = {"asset_type": row[0]}
+                for i, stage in enumerate(NIST_STAGES):
+                    entry[stage.lower()] = row[i + 1]
+                matrix_data.append(entry)
+            click.echo(json.dumps(matrix_data, indent=2))
+            return
+
         if solution:
             click.echo(
                 "Display the Rapid7 solution names mapped to each NIST CSF × CIS v8 cell.",
@@ -646,7 +673,6 @@ def rapid7(ctx: click.Context, percent: bool, solution: bool, reality: bool, sco
                 "not authorized for, and the ones that are not applicable.",
                 err=True,
             )
-        rows = build_matrix(licensed, percent=percent, solution=solution, adjusted_mapping=adjusted_mapping)
         click.echo(render_matrix(rows))
 
         if not solution:
