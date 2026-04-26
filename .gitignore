@@ -29,3 +29,6 @@ build/
 *.pyc
 .pytest_cache/
 .hypothesis/
+
+# Generated databases
+*.db

@@ -100,7 +100,7 @@ class SolutionGroup(click.MultiCommand):
     """Dynamic multi-command that routes to per-solution Click groups."""
 
     def list_commands(self, ctx: click.Context) -> list[str]:
-        return sorted(VALID_SOLUTIONS | {"validate", "tldr"})
+        return sorted(VALID_SOLUTIONS | {"validate", "tldr", "ask"})
 
     def get_command(self, ctx: click.Context, name: str) -> click.Command | None:
         if name == "help":
@@ -111,6 +111,9 @@ class SolutionGroup(click.MultiCommand):
             return _tldr_cmd
         if name == "validate":
             return _validate_cmd
+        if name == "ask":
+            from r7cli.ask import ask_cmd
+            return ask_cmd
         if name in STUB_SOLUTIONS:
             from r7cli.solutions.stub import create_stub_group
             return create_stub_group(name)
@@ -237,9 +240,11 @@ _TLDR = f"""{_BANNER}
 @click.option("-t", "--timeout", type=int, default=30, help="Request timeout in seconds (default: 30).")
 @click.option("--search-fields", "search", default=None, help="Search JSON response for a field name and print matching values.")
 @click.option("-s", "--short", is_flag=True, help="Compact single-line output.")
+@click.option("--llm", "llm_provider", default=None, type=click.Choice(["openai", "claude", "gemini"], case_sensitive=False), help="LLM provider for natural language commands.")
+@click.option("--llm-key", "llm_api_key", default=None, help="API key for the LLM provider.")
 @click.option("--tldr", is_flag=True, is_eager=True, expose_value=False, callback=lambda ctx, param, value: (click.echo(_TLDR), ctx.exit(0)) if value else None, help="Show quick-reference examples.")
 @click.pass_context
-def cli(ctx, region, verbose, api_key, output_format, use_cache, limit, debug, drp_token, timeout, search, short):
+def cli(ctx, region, verbose, api_key, output_format, use_cache, limit, debug, drp_token, timeout, search, short, llm_provider, llm_api_key):
     """placeholder"""
     try:
         ctx.ensure_object(dict)
@@ -255,6 +260,8 @@ def cli(ctx, region, verbose, api_key, output_format, use_cache, limit, debug, d
             timeout=timeout,
             search=search,
             short=short,
+            llm_provider_flag=llm_provider,
+            llm_api_key_flag=llm_api_key,
         )
         ctx.obj["config"] = config
     except R7Error as exc:

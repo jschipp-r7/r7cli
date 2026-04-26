@@ -31,6 +31,8 @@ class Config:
     timeout: int  # seconds, default 30
     search: Optional[str]  # field name to search for in JSON responses
     short: bool  # compact single-line output mode
+    llm_provider: str  # "openai" | "claude" | "gemini" | ""
+    llm_api_key: str  # API key for the chosen LLM provider
 
 
 def resolve_config(
@@ -46,6 +48,8 @@ def resolve_config(
     timeout: int = 30,
     search: Optional[str] = None,
     short: bool = False,
+    llm_provider_flag: Optional[str] = None,
+    llm_api_key_flag: Optional[str] = None,
 ) -> Config:
     """Build a :class:`Config` by merging flags, env vars, and defaults.
 
@@ -79,6 +83,27 @@ def resolve_config(
             f"Unsupported output format '{output_format}'. Supported formats: {supported}"
         )
 
+    # --- LLM provider: flag → env → "" ---
+    llm_provider = llm_provider_flag or os.environ.get("R7_LLM_PROVIDER") or ""
+    llm_provider = llm_provider.lower()
+    if llm_provider and llm_provider not in ("openai", "claude", "gemini"):
+        raise UserInputError(
+            f"Unsupported LLM provider '{llm_provider}'. "
+            f"Supported: openai, claude, gemini"
+        )
+
+    # --- LLM API key: flag → provider-specific env → generic env → "" ---
+    llm_api_key = llm_api_key_flag or ""
+    if not llm_api_key:
+        if llm_provider == "openai":
+            llm_api_key = os.environ.get("OPENAI_API_KEY") or ""
+        elif llm_provider == "claude":
+            llm_api_key = os.environ.get("ANTHROPIC_API_KEY") or ""
+        elif llm_provider == "gemini":
+            llm_api_key = os.environ.get("GEMINI_API_KEY") or ""
+        if not llm_api_key:
+            llm_api_key = os.environ.get("R7_LLM_API_KEY") or ""
+
     return Config(
         region=region,
         api_key=api_key,
@@ -91,4 +116,6 @@ def resolve_config(
         timeout=timeout,
         search=search,
         short=short,
+        llm_provider=llm_provider,
+        llm_api_key=llm_api_key,
     )
