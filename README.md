@@ -30,6 +30,13 @@ Recommended products to improve your coverage:
   + DSPM                  (+1 cells)
 ```
 
+## Features
+
+* Queries: Query and download SIEM & ASM logs to analyze locally or export to other systems
+* Compliance: Download raw Rapid7 data for compliance evidence for internal & external audits
+* Automation: Use in scripts for data enrichment and to check product health and platform status
+* Manage: Manage and provision many Rapid7 product settings in a repeatable way
+
 > Full API reference, command tables, and detailed usage: [docs/REFERENCE.md](docs/REFERENCE.md)
 
 ## Quick Start
