@@ -21,6 +21,7 @@ The workspace root is the `r7cli` Python package itself (mapped via `pyproject.t
 ├── controls.csv           # Master controls CSV (CIS, NIST CSF, PCI DSS, HITRUST, MITRE) with Rapid7 product mappings
 ├── product-market.mappings # Market technology → Rapid7 product mapping (tab-delimited)
 ├── parquet_filter.py      # Parquet file resolution, schema detection, filtering, auto-join for local exports
+├── ask.py                 # Natural language → CLI command translation via LLM (OpenAI, Claude, Gemini)
 ├── solutions/             # Per-product command modules
 │   ├── __init__.py
 │   ├── vm.py              # InsightVM — health, scans, engines, exports, assets, vulns, sites, cis
@@ -31,6 +32,7 @@ The workspace root is the `r7cli` Python package itself (mapped via `pyproject.t
 │   ├── appsec.py          # InsightAppSec — apps, scans, vulns, configs, templates, cis
 │   ├── cnapp.py           # InsightCloudSec — IaC scans, AWS keys/roles/accounts, findings, cis
 │   ├── soar.py            # InsightConnect — workflows, jobs, artifacts, snippets, cis
+│   ├── mcp.py             # Rapid7 Bulk Export MCP server — install, configure, query via stdio
 │   └── stub.py            # Stub group factory for not-yet-implemented solutions
 ├── tests/
 │   ├── __init__.py
@@ -51,3 +53,5 @@ The workspace root is the `r7cli` Python package itself (mapped via `pyproject.t
 - Polling mode (`--auto` with `-i`) tracks seen IDs and prints only new entries
 - Every solution group registers a `cis` subcommand via `cis.make_cis_command()` for CIS/NIST CSF controls lookup
 - `compliance.py` is a Click group (`invoke_without_command=True`): bare invocation runs the export pipeline, `list` subcommand queries CIS/NIST CSF controls
+- `ask.py` uses LLM APIs (OpenAI, Claude, Gemini) to translate natural language into CLI commands; system prompt is dynamically generated from the Click command tree
+- `solutions/mcp.py` communicates with the Rapid7 Bulk Export MCP server over stdio JSON-RPC; registered as `vm export mcp` subgroup

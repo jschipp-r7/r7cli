@@ -53,10 +53,19 @@ r7-cli --help
 # Validate credentials
 r7-cli validate
 
+# Natural language commands (requires LLM provider)
+r7-cli --llm openai ask show me critical vulnerabilities
+r7-cli --llm claude ask -x list all open investigations
+
 # VM scans and assets
 r7-cli vm scans list --days 7
 r7-cli vm assets list --hostname 'webserver' --all-pages
 r7-cli vm export vulnerabilities --auto
+
+# MCP server (AI-powered bulk export analysis)
+r7-cli vm export mcp install
+r7-cli vm export mcp start-export
+r7-cli vm export mcp query "SELECT severity, COUNT(*) FROM vulnerabilities GROUP BY severity"
 
 # SIEM investigations
 r7-cli siem health
@@ -94,6 +103,8 @@ r7-cli platform matrix --json
 | `-t, --timeout` | Request timeout in seconds (default: 30) |
 | `--search-fields` | Search response for a field name |
 | `--drp-token` | DRP API token in `user:key` format |
+| `--llm` | LLM provider for natural language commands (`openai`, `claude`, `gemini`) |
+| `--llm-key` | API key for the LLM provider |
 | `--tldr` | Show quick-reference examples |
 
 ## Output Formats
@@ -119,6 +130,48 @@ r7-cli vm export vulnerabilities --auto
 r7-cli vm export list --severity Critical --has-exploits true
 r7-cli vm export list --hostname '*.prod.*' --where 'cvssScore>=9.0'
 ```
+
+## MCP Server Integration
+
+The [Rapid7 Bulk Export MCP](https://github.com/rapid7/rapid7-bulk-export-mcp) server provides AI-powered analysis of bulk export data using a local DuckDB database.
+
+```bash
+# Install the MCP server
+r7-cli vm export mcp install
+
+# Configure for your AI tool (Kiro, Claude Desktop, VS Code, etc.)
+r7-cli vm export mcp configure
+r7-cli vm export mcp configure --target claude-desktop
+
+# Export and load data
+r7-cli vm export mcp start-export
+r7-cli vm export mcp status --id <EXPORT_ID>
+r7-cli vm export mcp download --id <EXPORT_ID>
+
+# Query with SQL
+r7-cli vm export mcp query "SELECT severity, COUNT(*) FROM vulnerabilities GROUP BY severity"
+r7-cli vm export mcp schema
+r7-cli vm export mcp stats
+```
+
+## Natural Language Commands
+
+Use `r7-cli ask` to describe what you want in plain English. An LLM translates your request into the correct CLI command.
+
+```bash
+# Configure LLM provider (or set R7_LLM_PROVIDER + provider API key env vars)
+r7-cli --llm openai ask show me critical vulnerabilities
+r7-cli --llm claude ask how many assets do I have
+r7-cli --llm gemini ask list scans from the last week
+
+# Execute the generated command directly
+r7-cli --llm openai ask -x list all open investigations
+
+# Skip confirmation prompt
+r7-cli --llm claude ask -x -y check VM health
+```
+
+Environment variables: `R7_LLM_PROVIDER`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`
 
 ## Development
 

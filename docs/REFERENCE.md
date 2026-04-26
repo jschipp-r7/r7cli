@@ -72,6 +72,8 @@ Supported regions: `us`, `us1`, `us2`, `us3`, `ca`, `eu`, `au`, `ap`, `me-centra
 | `-t, --timeout` | Request timeout in seconds (default: 30) |
 | `--search-fields` | Search JSON response for a field name and print matching values |
 | `--drp-token` | DRP API token in `user:key` format |
+| `--llm` | LLM provider for natural language commands (`openai`, `claude`, `gemini`) |
+| `--llm-key` | API key for the LLM provider |
 | `--tldr` | Show quick-reference examples |
 
 ## License Checking
@@ -125,6 +127,42 @@ r7-cli validate
 
 ---
 
+### `r7-cli ask` — Natural Language Commands
+
+Translates a natural language request into the appropriate r7-cli command using an LLM (OpenAI, Claude, or Gemini). The system prompt is dynamically generated from the CLI's command tree, so it always stays in sync with available commands.
+
+| Option | Description |
+|--------|-------------|
+| `-x, --execute` | Execute the generated command immediately |
+| `-y, --yes` | Skip confirmation when using `--execute` |
+
+Requires `--llm` global flag (or `R7_LLM_PROVIDER` env var) and an API key for the chosen provider.
+
+| Provider | Env Var |
+|----------|---------|
+| `openai` | `OPENAI_API_KEY` |
+| `claude` | `ANTHROPIC_API_KEY` |
+| `gemini` | `GEMINI_API_KEY` |
+| (any) | `R7_LLM_API_KEY` (generic fallback) |
+
+```bash
+# Show the command (doesn't execute)
+r7-cli --llm openai ask show me critical vulnerabilities
+
+# Execute directly
+r7-cli --llm claude ask -x list all open investigations
+
+# Using env vars
+export R7_LLM_PROVIDER=gemini
+export GEMINI_API_KEY=your-key
+r7-cli ask how many assets do I have
+
+# Auto-execute without confirmation
+r7-cli --llm openai ask -x -y check VM health
+```
+
+---
+
 ### `r7-cli vm` — InsightVM
 
 Manages vulnerability scans, assets, engines, sites, vulnerabilities, and bulk exports via the IVM v4 Integration API and the Bulk Export GraphQL API.
@@ -151,6 +189,17 @@ Manages vulnerability scans, assets, engines, sites, vulnerabilities, and bulk e
 | `vm export list` | — | Local filesystem | Filter downloaded Parquet files |
 | `vm export schema` | POST | `/export/graphql` (GQL query) | Inspect export schema |
 | `vm export job status` | POST | `/export/graphql` (GQL query) | Poll export job status |
+| `vm export mcp install` | — | — | Install the Rapid7 Bulk Export MCP server |
+| `vm export mcp configure` | — | — | Write MCP config for AI tools |
+| `vm export mcp start-export` | MCP | `start_rapid7_export` tool | Start export via MCP server |
+| `vm export mcp status` | MCP | `check_rapid7_export_status` tool | Check MCP export status |
+| `vm export mcp download` | MCP | `download_rapid7_export` tool | Download & load into DuckDB |
+| `vm export mcp query` | MCP | `query_rapid7` tool | Execute SQL against DuckDB |
+| `vm export mcp schema` | MCP | `get_rapid7_schema` tool | Show DuckDB table schemas |
+| `vm export mcp stats` | MCP | `get_rapid7_stats` tool | Show summary statistics |
+| `vm export mcp list-exports` | MCP | `list_rapid7_exports` tool | List tracked exports |
+| `vm export mcp suggest` | MCP | `suggest_query` tool | Get SQL query suggestions |
+| `vm export mcp load-parquet` | MCP | `load_rapid7_parquet` tool | Load local Parquet files |
 
 Base URLs:
 - IVM v4: `https://{region}.api.insight.rapid7.com/vm/v4`
@@ -173,6 +222,19 @@ r7-cli vm export remediations --month january --year 2026 --auto
 r7-cli vm export list --severity Critical --has-exploits true
 r7-cli vm export list --hostname '*.prod.*' --where 'cvssScore>=9.0'
 r7-cli vm export job status --id <JOB_ID> --poll
+
+# MCP server commands
+r7-cli vm export mcp install
+r7-cli vm export mcp configure
+r7-cli vm export mcp start-export
+r7-cli vm export mcp start-export --type policy
+r7-cli vm export mcp status --id <EXPORT_ID>
+r7-cli vm export mcp download --id <EXPORT_ID>
+r7-cli vm export mcp query "SELECT severity, COUNT(*) FROM vulnerabilities GROUP BY severity"
+r7-cli vm export mcp schema
+r7-cli vm export mcp stats
+r7-cli vm export mcp list-exports
+r7-cli vm export mcp suggest "find critical vulns with exploits"
 ```
 
 ---
@@ -715,6 +777,7 @@ r7cli/                     # Package root (workspace root)
 ├── output.py              # format_output() (json/table/csv/tsv/sql, short mode)
 ├── cache.py               # CacheStore (SHA-256-keyed JSON file cache)
 ├── jobs.py                # JobStore (export job persistence)
+├── ask.py                 # Natural language → CLI command translation (LLM)
 ├── agents.py              # Cross-platform asset count command
 ├── extensions.py          # Extension Library browser (no auth)
 ├── compliance.py          # VM policy export → SQL dump pipeline
@@ -731,6 +794,7 @@ r7cli/                     # Package root (workspace root)
 │   ├── appsec.py          # InsightAppSec
 │   ├── cnapp.py           # InsightCloudSec
 │   ├── soar.py            # InsightConnect
+│   ├── mcp.py             # Rapid7 Bulk Export MCP server integration
 │   └── stub.py            # Stub group factory
 ├── tests/
 │   └── test_download_mkdir.py

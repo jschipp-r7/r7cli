@@ -50,3 +50,6 @@ r7-cli <solution> <subcommand> [options]
 - CIS/NIST CSF controls loaded from `controls.csv` (bundled as package data) by `cis.py`
 - Per-solution `cis` subcommand registered via `cis.make_cis_command()` in each solution module
 - `compliance` is a Click group (`invoke_without_command=True`): bare invocation runs export, `list` subcommand queries controls
+- `ask` command dynamically introspects the Click command tree to build LLM system prompts — no static spec to maintain
+- MCP integration (`solutions/mcp.py`) communicates with `rapid7-mcp-server` over stdio JSON-RPC; uses `subprocess.Popen` for lifecycle management
+- LLM calls use `httpx` directly (same HTTP library as the rest of the CLI) to call OpenAI, Anthropic, and Google Gemini APIs
