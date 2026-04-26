@@ -89,7 +89,9 @@ def _run_mcp_stdio(config: Config, request: dict) -> dict:
     _log_debug(config, f"API key: {'set (' + config.api_key[:4] + '…)' if config.api_key else 'NOT SET'}")
 
     timeout = config.timeout or _MCP_READ_TIMEOUT
-    tool_timeout = config.timeout or _MCP_TOOL_TIMEOUT
+    # For tool calls, use the larger of config.timeout and _MCP_TOOL_TIMEOUT
+    # so the default 30s global timeout doesn't choke slow MCP operations.
+    tool_timeout = max(config.timeout, _MCP_TOOL_TIMEOUT) if config.timeout else _MCP_TOOL_TIMEOUT
 
     proc = subprocess.Popen(
         [server_cmd],
