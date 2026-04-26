@@ -177,16 +177,19 @@ def _drain_stderr(proc: subprocess.Popen, config: Config) -> None:
 
 
 def _send_message(proc: subprocess.Popen, message: dict, config: Config) -> None:
-    """Send a JSON-RPC message using the MCP stdio transport format."""
+    """Send a JSON-RPC message using newline-delimited JSON (MCP SDK stdio transport)."""
     body = json.dumps(message)
-    header = f"Content-Length: {len(body.encode())}\r\n\r\n"
     _log_debug(config, f"→ Sending {len(body.encode())} bytes: method={message.get('method', 'N/A')}")
-    proc.stdin.write(header + body)
+    proc.stdin.write(body + "\n")
     proc.stdin.flush()
 
 
 def _read_response(proc: subprocess.Popen, config: Config, timeout: int = _MCP_READ_TIMEOUT) -> dict:
     """Read a JSON-RPC response from the MCP server's stdout.
+
+    The MCP SDK stdio transport uses newline-delimited JSON — one JSON
+    object per line.  We read lines until we get a valid JSON-RPC response
+    (has an "id" field), skipping notifications and log messages.
 
     Raises TimeoutError if no response is received within the timeout period.
     """
@@ -195,12 +198,11 @@ def _read_response(proc: subprocess.Popen, config: Config, timeout: int = _MCP_R
     deadline = time.monotonic() + timeout
     _log_debug(config, f"← Waiting for response (timeout: {timeout}s)…")
 
-    # Read Content-Length header
-    header_line = ""
+    buffer = ""
     while True:
         remaining = deadline - time.monotonic()
         if remaining <= 0:
-            raise TimeoutError(f"Timed out waiting for MCP response header after {timeout}s")
+            raise TimeoutError(f"Timed out waiting for MCP response after {timeout}s")
 
         # Use select for timeout on reads (Unix)
         if hasattr(select, "select"):
@@ -223,47 +225,26 @@ def _read_response(proc: subprocess.Popen, config: Config, timeout: int = _MCP_R
                 f"MCP server closed unexpectedly. stderr: {stderr_output.strip() or '(empty)'}",
                 exit_code=2,
             )
-        header_line += ch
-        if header_line.endswith("\r\n\r\n"):
-            break
 
-    # Parse content length
-    content_length = 0
-    for line in header_line.strip().split("\r\n"):
-        if line.lower().startswith("content-length:"):
-            content_length = int(line.split(":", 1)[1].strip())
-            break
-
-    if content_length == 0:
-        raise R7Error("Invalid MCP response: missing Content-Length", exit_code=2)
-
-    _log_debug(config, f"← Reading {content_length} bytes…")
-
-    # Read body with timeout
-    body = ""
-    while len(body.encode()) < content_length:
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            raise TimeoutError(f"Timed out reading MCP response body after {timeout}s")
-
-        if hasattr(select, "select"):
-            ready, _, _ = select.select([proc.stdout], [], [], min(remaining, 1.0))
-            if not ready:
-                if proc.poll() is not None:
-                    stderr_output = proc.stderr.read() if proc.stderr else ""
-                    raise R7Error(
-                        f"MCP server exited while sending response (code {proc.returncode}). "
-                        f"stderr: {stderr_output.strip() or '(empty)'}",
-                        exit_code=2,
-                    )
+        buffer += ch
+        if ch == "\n":
+            line = buffer.strip()
+            buffer = ""
+            if not line:
+                continue
+            try:
+                msg = json.loads(line)
+            except json.JSONDecodeError:
+                _log_debug(config, f"← Skipping non-JSON line: {line[:120]}")
                 continue
 
-        chunk = proc.stdout.read(content_length - len(body.encode()))
-        if chunk == "":
-            raise R7Error("MCP server closed while sending response body", exit_code=2)
-        body += chunk
-
-    return json.loads(body)
+            # Skip notifications (no "id" field) — only return responses
+            if "id" in msg:
+                _log_debug(config, f"← Received response for id={msg['id']}")
+                return msg
+            else:
+                _log_debug(config, f"← Skipping notification: method={msg.get('method', 'N/A')}")
+                continue
 
 
 def _call_tool(config: Config, tool_name: str, arguments: dict | None = None) -> str:
