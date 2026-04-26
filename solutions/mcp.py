@@ -808,8 +808,15 @@ def mcp_start(ctx, output_dir):
 
     # Done
     click.echo("")
-    click.echo("✓ Vulnerability data is ready. Query it with:")
-    click.echo('  r7-cli vm export mcp query "SELECT severity, COUNT(*) FROM vulnerabilities GROUP BY severity"')
+    click.echo("✓ Vulnerability data is ready. You can now run SQL queries against it.")
+    click.echo("")
+    click.echo("  Try this to get started:")
+    click.echo('    r7-cli vm export mcp query "SELECT COUNT(*) as total_vulns FROM vulnerabilities"')
+    click.echo("")
+    click.echo("  More examples:")
+    click.echo('    r7-cli vm export mcp query "SELECT severity, COUNT(*) as cnt FROM vulnerabilities GROUP BY severity ORDER BY cnt DESC"')
+    click.echo('    r7-cli vm export mcp query "SELECT hostName, COUNT(*) as cnt FROM vulnerabilities GROUP BY hostName ORDER BY cnt DESC LIMIT 10"')
+    click.echo('    r7-cli vm export mcp query "SELECT title FROM vulnerabilities WHERE severity=\'Critical\' LIMIT 5"')
 
 
 def _extract_export_id_from_text(text: str) -> str | None:
