@@ -806,6 +806,21 @@ def mcp_start(ctx, output_dir):
         click.echo(f"  ✗ Download failed: {exc}", err=True)
         sys.exit(exc.exit_code)
 
+    # Report file locations
+    data_dir = Path.home() / ".rapid7-mcp"
+    db_path = data_dir / "rapid7_bulk_export.db"
+    click.echo("")
+    click.echo("  Files:")
+    click.echo(f"    DuckDB database: {db_path}")
+    if dl_result:
+        # Try to extract file paths from the download result
+        for line in dl_result.splitlines():
+            stripped = line.strip()
+            if stripped.endswith(".parquet") or "/imports/" in stripped or "/downloads/" in stripped:
+                click.echo(f"    Parquet: {stripped}")
+    if output_dir:
+        click.echo(f"    Output dir: {Path(output_dir).resolve()}")
+
     # Done
     click.echo("")
     click.echo("✓ Vulnerability data is ready. You can now run SQL queries against it.")
