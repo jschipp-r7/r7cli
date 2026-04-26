@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import json
 import os
-import signal
 import shutil
 import subprocess
 import sys
@@ -33,11 +32,6 @@ _VALID_EXPORT_TYPES = ("vulnerability", "policy", "remediation")
 
 # Kiro MCP config path (workspace-level)
 _KIRO_MCP_CONFIG = Path(".kiro/settings/mcp.json")
-
-# PID file for persistent server mode
-_MCP_PID_DIR = Path.home() / ".r7-cli"
-_MCP_PID_FILE = _MCP_PID_DIR / "mcp-server.pid"
-_MCP_LOG_FILE = _MCP_PID_DIR / "mcp-server.log"
 
 # Default timeout for reading MCP responses (seconds)
 _MCP_READ_TIMEOUT = 30
@@ -303,41 +297,8 @@ def _call_tool(config: Config, tool_name: str, arguments: dict | None = None) ->
 
 
 # ---------------------------------------------------------------------------
-# Server lifecycle helpers
+# Server setup helpers
 # ---------------------------------------------------------------------------
-
-def _read_pid_file() -> int | None:
-    """Read the PID from the MCP server PID file, or None if not present."""
-    if not _MCP_PID_FILE.exists():
-        return None
-    try:
-        pid = int(_MCP_PID_FILE.read_text().strip())
-        return pid
-    except (ValueError, OSError):
-        return None
-
-
-def _is_process_running(pid: int) -> bool:
-    """Check if a process with the given PID is running."""
-    try:
-        os.kill(pid, 0)
-        return True
-    except (OSError, ProcessLookupError):
-        return False
-
-
-def _write_pid_file(pid: int) -> None:
-    """Write the server PID to the PID file."""
-    _MCP_PID_DIR.mkdir(parents=True, exist_ok=True)
-    _MCP_PID_FILE.write_text(str(pid))
-
-
-def _remove_pid_file() -> None:
-    """Remove the PID file."""
-    try:
-        _MCP_PID_FILE.unlink()
-    except FileNotFoundError:
-        pass
 
 
 def _auto_configure_api_key(config: Config) -> None:
@@ -386,18 +347,14 @@ def mcp_group(ctx):
 
     \b
     Quick start:
-      r7-cli vm export mcp install        # Install the MCP server
-      r7-cli vm export mcp configure      # Write Kiro MCP config
-      r7-cli vm export mcp start-export   # Kick off a vulnerability export
-      r7-cli vm export mcp status --id X  # Check export progress
-      r7-cli vm export mcp download --id X  # Download & load into DuckDB
+      r7-cli vm export mcp server setup   # Install + configure + verify
+      r7-cli vm export mcp download       # Download all available exports
       r7-cli vm export mcp query "SELECT severity, COUNT(*) FROM vulnerabilities GROUP BY severity"
 
     \b
-    Server management:
-      r7-cli vm export mcp server start   # Start persistent MCP server
-      r7-cli vm export mcp server stop    # Stop the server
-      r7-cli vm export mcp server status  # Check if server is running
+    Server diagnostics:
+      r7-cli vm export mcp server setup   # Install, configure API key, verify
+      r7-cli vm export mcp server check   # Quick connectivity test
 
     \b
     Debugging:
@@ -408,49 +365,47 @@ def mcp_group(ctx):
 
 
 # ---------------------------------------------------------------------------
-# mcp server (subgroup for lifecycle management)
+# mcp server (subgroup for setup and diagnostics)
 # ---------------------------------------------------------------------------
 
 @mcp_group.group("server", cls=GlobalFlagHintGroup)
 @click.pass_context
 def mcp_server_group(ctx):
-    """Manage the MCP server process (start, stop, status).
+    """Setup, check, and diagnose the MCP server.
 
     \b
-    By default, each `mcp` command starts a fresh server subprocess,
-    runs the request, and shuts it down. For repeated queries, you can
-    start a persistent server that stays running in the background.
+    The MCP server uses stdio transport — it runs as a short-lived subprocess
+    for each command (like git). There is no long-running daemon to manage.
+    Each `mcp` subcommand (query, download, etc.) spawns the server, sends
+    a request, gets the response, and shuts it down automatically.
 
     \b
-    Examples:
-      r7-cli vm export mcp server start
-      r7-cli vm export mcp server status
-      r7-cli vm export mcp server stop
+    Use these commands to install, configure, and verify the server works:
+      r7-cli vm export mcp server setup    # Install + configure + verify
+      r7-cli vm export mcp server check    # Quick connectivity test
     """
     pass
 
 
-@mcp_server_group.command("start")
+@mcp_server_group.command("setup")
 @click.pass_context
-def mcp_server_start(ctx):
-    """Start the MCP server as a persistent background process.
+def mcp_server_setup(ctx):
+    """Install the MCP server, configure auth, and verify connectivity.
 
     \b
-    The server runs in the background and logs to ~/.r7-cli/mcp-server.log.
-    Use `server status` to check if it's running, and `server stop` to shut it down.
-
-    \b
-    If the MCP server is not installed, it will be installed automatically.
-    The API key from your current config is written to the Kiro MCP config
-    so the server can authenticate on startup.
+    This is the one-stop setup command. It will:
+      1. Install the MCP server if not already installed
+      2. Write your API key to .kiro/settings/mcp.json
+      3. Run a quick connectivity test to verify everything works
 
     \b
     Examples:
-      r7-cli vm export mcp server start
-      r7-cli -v vm export mcp server start
+      r7-cli vm export mcp server setup
+      r7-cli -v vm export mcp server setup
     """
     config = _get_config(ctx)
 
+    # Step 1: Install if needed
     server_cmd = _find_mcp_server()
     if not server_cmd:
         click.echo("MCP server is not installed. Installing now…", err=True)
@@ -472,175 +427,71 @@ def mcp_server_start(ctx):
                 err=True,
             )
             sys.exit(2)
+    else:
+        click.echo(f"✓ MCP server already installed: {server_cmd}")
 
-    # Auto-configure API key into the Kiro MCP config
+    # Step 2: Configure API key
     if config.api_key:
         _auto_configure_api_key(config)
     else:
         click.echo(
-            "Warning: No API key set. The server may not be able to authenticate.\n"
+            "⚠ No API key set. The server won't be able to authenticate.\n"
             "  Set via: -k <key>, or R7_X_API_KEY env var.",
             err=True,
         )
 
-    # Check if already running
-    existing_pid = _read_pid_file()
-    if existing_pid and _is_process_running(existing_pid):
-        click.echo(f"MCP server is already running (PID {existing_pid}).")
-        click.echo(f"  Log: {_MCP_LOG_FILE}")
-        return
-
-    # Build environment
-    env = dict(os.environ)
-    if config.api_key:
-        env["RAPID7_API_KEY"] = config.api_key
-    env["RAPID7_REGION"] = config.region
-
-    _log_verbose(config, f"Starting persistent server: {server_cmd}")
-    _log_debug(config, f"Region: {config.region}")
-    _log_debug(config, f"Log file: {_MCP_LOG_FILE}")
-
-    # Start the server in the background
-    _MCP_PID_DIR.mkdir(parents=True, exist_ok=True)
-    log_file = open(_MCP_LOG_FILE, "a")
-
-    proc = subprocess.Popen(
-        [server_cmd],
-        stdin=subprocess.PIPE,
-        stdout=log_file,
-        stderr=log_file,
-        env=env,
-        start_new_session=True,  # Detach from terminal
-    )
-
-    # Give it a moment to start (or crash)
-    time.sleep(1)
-    if proc.poll() is not None:
-        log_file.close()
-        # Server exited immediately — read the log for clues
-        recent_log = ""
-        try:
-            recent_log = _MCP_LOG_FILE.read_text()[-500:]
-        except OSError:
-            pass
-        click.echo(f"MCP server failed to start (exit code {proc.returncode}).", err=True)
-        if recent_log:
-            click.echo(f"Recent log output:\n{recent_log}", err=True)
-        sys.exit(2)
-
-    _write_pid_file(proc.pid)
-    log_file.close()
-
-    click.echo(f"✓ MCP server started (PID {proc.pid})")
-    click.echo(f"  Log: {_MCP_LOG_FILE}")
-    click.echo(f"  Stop: r7-cli vm export mcp server stop")
+    # Step 3: Connectivity test
+    click.echo("")
+    click.echo("Testing server connectivity…")
+    _run_connectivity_test(config, server_cmd)
 
 
-@mcp_server_group.command("stop")
+@mcp_server_group.command("check")
 @click.pass_context
-def mcp_server_stop(ctx):
-    """Stop the persistent MCP server process.
+def mcp_server_check(ctx):
+    """Quick connectivity test — verify the MCP server responds.
 
     \b
-    Sends SIGTERM to the server process. If it doesn't stop within 5 seconds,
-    sends SIGKILL.
+    Spawns the server, sends an initialization handshake, and reports
+    whether it responds correctly. This is the same test that runs
+    during `server setup`.
 
     \b
     Examples:
-      r7-cli vm export mcp server stop
+      r7-cli vm export mcp server check
+      r7-cli --debug vm export mcp server check
     """
     config = _get_config(ctx)
 
-    pid = _read_pid_file()
-    if pid is None:
-        click.echo("No MCP server PID file found. Server may not be running.")
-        _remove_pid_file()
-        return
-
-    if not _is_process_running(pid):
-        click.echo(f"MCP server (PID {pid}) is not running. Cleaning up PID file.")
-        _remove_pid_file()
-        return
-
-    _log_verbose(config, f"Stopping MCP server (PID {pid})…")
-
-    try:
-        os.kill(pid, signal.SIGTERM)
-        # Wait for graceful shutdown
-        for _ in range(50):  # 5 seconds in 100ms increments
-            if not _is_process_running(pid):
-                break
-            time.sleep(0.1)
-        else:
-            # Force kill if still running
-            _log_verbose(config, "Server did not stop gracefully, sending SIGKILL")
-            os.kill(pid, signal.SIGKILL)
-            time.sleep(0.5)
-    except ProcessLookupError:
-        pass
-
-    _remove_pid_file()
-    click.echo(f"✓ MCP server stopped (was PID {pid})")
-
-
-@mcp_server_group.command("status")
-@click.pass_context
-def mcp_server_status(ctx):
-    """Check if the MCP server is running.
-
-    \b
-    Shows the server PID, whether it's responsive, and the log file location.
-
-    \b
-    Examples:
-      r7-cli vm export mcp server status
-    """
-    config = _get_config(ctx)
-
-    # Check binary availability
     server_cmd = _find_mcp_server()
     if not server_cmd:
         click.echo("MCP server binary: NOT INSTALLED")
-        click.echo(f"  Install with: r7-cli vm export mcp install")
-        return
+        click.echo("  Run: r7-cli vm export mcp server setup")
+        sys.exit(2)
 
     click.echo(f"MCP server binary: {server_cmd}")
 
-    # Check persistent server
-    pid = _read_pid_file()
-    if pid is None:
-        click.echo("Persistent server: not started")
-    elif _is_process_running(pid):
-        click.echo(f"Persistent server: RUNNING (PID {pid})")
+    # Show config file status
+    if _KIRO_MCP_CONFIG.exists():
+        click.echo(f"Config: {_KIRO_MCP_CONFIG} ✓")
     else:
-        click.echo(f"Persistent server: DEAD (stale PID {pid})")
-        _remove_pid_file()
+        click.echo(f"Config: {_KIRO_MCP_CONFIG} (not configured)")
+        click.echo("  Run: r7-cli vm export mcp server setup")
 
-    # Show log file info
-    if _MCP_LOG_FILE.exists():
-        size = _MCP_LOG_FILE.stat().st_size
-        click.echo(f"Log file: {_MCP_LOG_FILE} ({size} bytes)")
-        # Show last few lines
-        try:
-            lines = _MCP_LOG_FILE.read_text().strip().split("\n")
-            tail = lines[-5:] if len(lines) > 5 else lines
-            if tail and tail[0]:
-                click.echo("  Last log lines:")
-                for line in tail:
-                    click.echo(f"    {line}")
-        except OSError:
-            pass
-    else:
-        click.echo(f"Log file: {_MCP_LOG_FILE} (not created yet)")
-
-    # Quick connectivity test (start a server, send init, shut down)
     click.echo("")
-    click.echo("Testing server connectivity…")
+    _run_connectivity_test(config, server_cmd)
+
+
+def _run_connectivity_test(config: Config, server_cmd: str) -> None:
+    """Spawn the MCP server, do a handshake, and report results."""
+    proc = None
     try:
         env = dict(os.environ)
         if config.api_key:
             env["RAPID7_API_KEY"] = config.api_key
         env["RAPID7_REGION"] = config.region
+
+        _log_verbose(config, f"Spawning: {server_cmd}")
 
         proc = subprocess.Popen(
             [server_cmd],
@@ -650,6 +501,9 @@ def mcp_server_status(ctx):
             env=env,
             text=True,
         )
+
+        _log_verbose(config, f"Server PID: {proc.pid}, sending initialize…")
+
         init_request = {
             "jsonrpc": "2.0",
             "id": 1,
@@ -661,67 +515,61 @@ def mcp_server_status(ctx):
             },
         }
         _send_message(proc, init_request, config)
-        response = _read_response(proc, config, timeout=10)
-        proc.stdin.close()
-        proc.terminate()
-        proc.wait(timeout=5)
+        response = _read_response(proc, config, timeout=15)
 
         server_info = response.get("result", {}).get("serverInfo", {})
         server_name = server_info.get("name", "unknown")
         server_version = server_info.get("version", "unknown")
+        tools = response.get("result", {}).get("capabilities", {}).get("tools", {})
+
         click.echo(f"  ✓ Server responds: {server_name} v{server_version}")
+        _log_debug(config, f"  Capabilities: {json.dumps(response.get('result', {}).get('capabilities', {}))}")
+
+        if tools:
+            click.echo(f"  Tools available: yes")
+
+        click.echo("")
+        click.echo("The MCP server is working. Each command (query, download, etc.)")
+        click.echo("will automatically start and stop the server as needed.")
+
     except TimeoutError:
-        click.echo("  ✗ Server did not respond within 10s (may be hanging on startup)")
-        click.echo("    Check that RAPID7_API_KEY is set and valid")
+        click.echo("  ✗ Server did not respond within 15s.")
+        click.echo("")
+        click.echo("  Possible causes:")
+        click.echo("    • RAPID7_API_KEY is not set or invalid")
+        click.echo("    • Server is hanging during database initialization")
+        click.echo("    • Network issue reaching Rapid7 APIs")
+        click.echo("")
+        click.echo("  Try with debug output: r7-cli --debug vm export mcp server check")
+        # Try to get stderr for more info
+        if proc and proc.stderr:
+            try:
+                import select
+                ready, _, _ = select.select([proc.stderr], [], [], 0.5)
+                if ready:
+                    stderr = proc.stderr.read()
+                    if stderr.strip():
+                        click.echo(f"  Server stderr:\n    {stderr.strip()}")
+            except (OSError, ValueError):
+                pass
+        sys.exit(2)
     except R7Error as exc:
         click.echo(f"  ✗ Server error: {exc}")
+        sys.exit(2)
     except Exception as exc:
         click.echo(f"  ✗ Could not connect: {exc}")
+        sys.exit(2)
     finally:
-        try:
-            proc.kill()
-        except Exception:
-            pass
-
-
-@mcp_server_group.command("logs")
-@click.option("-n", "--lines", type=int, default=20, help="Number of lines to show (default: 20).")
-@click.option("-f", "--follow", is_flag=True, help="Follow log output (like tail -f). Press Ctrl+C to stop.")
-@click.pass_context
-def mcp_server_logs(ctx, lines, follow):
-    """Show MCP server log output.
-
-    \b
-    Examples:
-      r7-cli vm export mcp server logs
-      r7-cli vm export mcp server logs -n 50
-      r7-cli vm export mcp server logs -f
-    """
-    if not _MCP_LOG_FILE.exists():
-        click.echo(f"No log file found at {_MCP_LOG_FILE}")
-        click.echo("Start the server first: r7-cli vm export mcp server start")
-        return
-
-    if follow:
-        click.echo(f"Following {_MCP_LOG_FILE} (Ctrl+C to stop)…", err=True)
-        try:
-            with open(_MCP_LOG_FILE) as f:
-                # Seek to end
-                f.seek(0, 2)
-                while True:
-                    line = f.readline()
-                    if line:
-                        click.echo(line, nl=False)
-                    else:
-                        time.sleep(0.2)
-        except KeyboardInterrupt:
-            pass
-    else:
-        content = _MCP_LOG_FILE.read_text()
-        all_lines = content.strip().split("\n")
-        tail = all_lines[-lines:] if len(all_lines) > lines else all_lines
-        for line in tail:
-            click.echo(line)
+        if proc:
+            try:
+                proc.stdin.close()
+                proc.terminate()
+                proc.wait(timeout=5)
+            except Exception:
+                try:
+                    proc.kill()
+                except Exception:
+                    pass
 
 
 # ---------------------------------------------------------------------------
