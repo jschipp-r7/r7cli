@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import sys
-from typing import Any
 
 import click
 from r7cli.cli_group import GlobalFlagHintGroup
@@ -86,7 +85,7 @@ def asm(ctx):
     pass
 
 
-from r7cli.cis import make_cis_command as _make_cis_asm
+from r7cli.cis import make_cis_command as _make_cis_asm  # noqa: E402
 asm.add_command(_make_cis_asm("asm"))
 
 

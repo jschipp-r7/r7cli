@@ -176,7 +176,7 @@ def siem(ctx):
     pass
 
 
-from r7cli.cis import make_cis_command as _make_cis_siem
+from r7cli.cis import make_cis_command as _make_cis_siem  # noqa: E402
 siem.add_command(_make_cis_siem("siem"))
 
 
@@ -538,7 +538,7 @@ def logs_query(ctx, logset_name, time_range, from_ts, to_ts, leql_query, max_pag
         if val.isdigit() and len(val) >= 10:
             return val  # already epoch ms
         try:
-            from datetime import datetime as _dt, timezone as _tz
+            from datetime import datetime as _dt
             dt = _dt.fromisoformat(val.replace("Z", "+00:00"))
             return str(int(dt.timestamp() * 1000))
         except (ValueError, AttributeError):
@@ -561,7 +561,8 @@ def logs_query(ctx, logset_name, time_range, from_ts, to_ts, leql_query, max_pag
         query_params["query"] = leql_query
 
     # Cache: store/retrieve query results locally by logset name
-    import hashlib, json as _json
+    import hashlib
+    import json as _json
     from pathlib import Path
     _cache_dir = Path.home() / ".r7-cli" / "cache" / "log-queries"
     _cache_key = hashlib.sha256(f"{logset_name}:{time_range_label}:{leql_query or ''}:{config.region}".encode()).hexdigest()[:16]

@@ -1,7 +1,7 @@
 """Shared constants, dataclasses, and exception hierarchy for r7-cli."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 # ---------------------------------------------------------------------------

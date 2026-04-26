@@ -124,7 +124,6 @@ def read_parquet_files(paths: list[Path]) -> list[dict]:
             sys.exit(2)
 
         col_names = table.column_names
-        schema = table.schema
 
         for row_idx in range(table.num_rows):
             row: dict[str, Any] = {}

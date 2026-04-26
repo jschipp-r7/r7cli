@@ -39,7 +39,7 @@ class GlobalFlagHintGroup(click.Group):
         for arg in args:
             flag = arg.split("=")[0] if "=" in arg else arg
             if flag in GLOBAL_FLAGS:
-                val_hint = f" <value>" if flag in GLOBAL_VALUE_FLAGS else ""
+                val_hint = " <value>" if flag in GLOBAL_VALUE_FLAGS else ""
                 click.echo(
                     f"Error: '{flag}' is a global option and must appear "
                     f"before the subcommand.\n\n"

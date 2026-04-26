@@ -92,7 +92,7 @@ def cnapp(ctx):
     pass
 
 
-from r7cli.cis import make_cis_command as _make_cis_cnapp
+from r7cli.cis import make_cis_command as _make_cis_cnapp  # noqa: E402
 cnapp.add_command(_make_cis_cnapp("cnapp"))
 
 

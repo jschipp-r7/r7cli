@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import hypothesis.strategies as st

@@ -309,7 +309,7 @@ def vm(ctx):
     pass
 
 
-from r7cli.cis import make_cis_command as _make_cis
+from r7cli.cis import make_cis_command as _make_cis  # noqa: E402
 vm.add_command(_make_cis("vm"))
 
 
@@ -764,7 +764,6 @@ def scans_start(ctx, data_str, data_file):
     if config.verbose:
         click.echo("Docs: https://help.rapid7.com/insightvm/en-us/api/integrations.html#operation/startScan", err=True)
 
-    import json as _json
     body = _resolve_body(data_str, data_file)
 
     try:
@@ -960,7 +959,6 @@ def engines_update_config(ctx, engine_id, data_str, data_file):
       r7-cli vm scan-engines update-config --id <ENGINE_ID> --data '{"key": "value"}'
       r7-cli vm scan-engines update-config --id <ENGINE_ID> --data-file config.json
     """
-    from r7cli.models import UserInputError
     config = _get_config(ctx)
     client = R7Client(config)
 

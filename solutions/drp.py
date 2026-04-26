@@ -11,11 +11,10 @@ from typing import Any
 
 import click
 from r7cli.cli_group import GlobalFlagHintGroup
-from r7cli.cli_group import GlobalFlagHintGroup
 
 from r7cli.client import R7Client
 from r7cli.config import Config
-from r7cli.models import DRP_BASE, APIError, R7Error, UserInputError
+from r7cli.models import DRP_BASE, APIError, R7Error
 from r7cli.output import format_output
 
 
@@ -134,7 +133,7 @@ def drp(ctx):
     pass
 
 
-from r7cli.cis import make_cis_command as _make_cis_drp
+from r7cli.cis import make_cis_command as _make_cis_drp  # noqa: E402
 drp.add_command(_make_cis_drp("drp"))
 
 

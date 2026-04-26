@@ -452,7 +452,7 @@ def appsec(ctx):
     pass
 
 
-from r7cli.cis import make_cis_command as _make_cis_appsec
+from r7cli.cis import make_cis_command as _make_cis_appsec  # noqa: E402
 appsec.add_command(_make_cis_appsec("appsec"))
 
 
@@ -1323,7 +1323,6 @@ def vulns_list(ctx, index, size, auto_poll, interval, all_pages, app_name, filte
     # --remediated uses the /search endpoint with a different query
     if remediated:
         is_remediated = remediated.lower() == "true"
-        status_val = "REMEDIATED" if is_remediated else "!REMEDIATED"
         search_url = IAS_V1_BASE.format(region=config.region) + "/search"
         if is_remediated:
             body = {"type": "VULNERABILITY", "query": "vulnerability.status = 'REMEDIATED'"}

@@ -13,7 +13,7 @@ from r7cli.cli_group import GlobalFlagHintGroup
 
 from r7cli.client import R7Client
 from r7cli.config import Config
-from r7cli.models import CONNECT_V1_BASE, CONNECT_V2_BASE, R7Error, UserInputError
+from r7cli.models import CONNECT_V1_BASE, CONNECT_V2_BASE, R7Error
 from r7cli.output import format_output
 
 
@@ -51,7 +51,7 @@ def soar(ctx):
     pass
 
 
-from r7cli.cis import make_cis_command as _make_cis_soar
+from r7cli.cis import make_cis_command as _make_cis_soar  # noqa: E402
 soar.add_command(_make_cis_soar("soar"))
 
 

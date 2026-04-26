@@ -10,12 +10,10 @@ from typing import Any
 import click
 import pyarrow.parquet as pq
 
-from r7cli.cli_group import GlobalFlagHintGroup
 from r7cli.client import R7Client
 from r7cli.config import Config
 from r7cli.models import (
     IVM_BULK_GQL,
-    GQL_GET_EXPORT,
     R7Error,
 )
 from r7cli.output import format_output
@@ -141,7 +139,7 @@ def _format_sql(rows: list[dict], table_name: str, timestamp: str) -> str:
 
     for row in rows:
         values = ", ".join(_format_sql_value(row.get(c), c) for c in columns)
-        lines.append(f"INSERT INTO {table_name} ({col_list}) VALUES ({values});")
+        lines.append(f"INSERT INTO {table_name} ({col_list}) VALUES ({values});")  # nosec B608 — table_name from CLI --table-name option, not external input
 
     return "\n".join(lines) + "\n"
 
@@ -307,15 +305,12 @@ def compliance(ctx, output_dir, table_name, sql_file, poll_interval):
 
 def _run_export_pipeline(config: Config, output_dir: str, poll_interval: int) -> list[Path]:
     """Run the full export pipeline: submit, poll, download, rename."""
-    from r7cli.solutions.vm import _poll_export, _download_parquet_urls
-    from r7cli.models import GQL_CREATE_POLICY_EXPORT, IVM_BULK_GQL, APIError
-    from r7cli.jobs import JobStore
+    from r7cli.solutions.vm import _poll_export
+    from r7cli.models import APIError
     import re
-    import json as _json
 
     client = R7Client(config)
     gql_url = IVM_BULK_GQL.format(region=config.region)
-    store = JobStore()
 
     mutation = {
         "query": "mutation CreatePolicyExport { createPolicyExport(input:{}) {id} }"
