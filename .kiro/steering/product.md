@@ -30,9 +30,7 @@ r7-cli is a CLI for the Rapid7 Command Platform. It wraps multiple security prod
 |--------------|------------------------------------------------------------|
 | `validate`   | Validate API key against the Insight Platform              |
 | `tldr`       | Show quick-reference examples for common commands          |
-| `ask`        | Translate natural language into r7-cli commands via LLM    |
-| `validate`   | Validate API key against the Insight Platform              |
-| `tldr`       | Show quick-reference examples for common commands          |
+| `ai`         | Translate natural language into r7-cli commands via LLM    |
 
 ## Market Technologies
 
@@ -136,9 +134,9 @@ The `vm export mcp` subgroup integrates the [Rapid7 Bulk Export MCP](https://git
 - `mcp schema` / `mcp stats` / `mcp list-exports` / `mcp suggest` — introspect loaded data
 - The MCP server binary is `rapid7-mcp-server`; env vars `RAPID7_API_KEY` and `RAPID7_REGION` are passed from the CLI config
 
-## Natural Language Commands (ask)
+## Natural Language Commands (ai)
 
-The `ask` top-level command translates natural language into r7-cli commands using an LLM.
+The `ai` top-level command translates natural language into r7-cli commands using an LLM.
 
 - Requires `--llm openai|claude|gemini` global flag (or `R7_LLM_PROVIDER` env var)
 - API key resolved from `--llm-key` flag, provider-specific env var (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`), or `R7_LLM_API_KEY`

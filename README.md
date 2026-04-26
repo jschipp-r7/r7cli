@@ -54,8 +54,8 @@ r7-cli --help
 r7-cli validate
 
 # Natural language commands (requires LLM provider)
-r7-cli --llm openai ask show me critical vulnerabilities
-r7-cli --llm claude ask -x list all open investigations
+r7-cli --llm openai ai show me critical vulnerabilities
+r7-cli --llm claude ai -x list all open investigations
 
 # VM scans and assets
 r7-cli vm scans list --days 7
@@ -156,19 +156,19 @@ r7-cli vm export mcp stats
 
 ## Natural Language Commands
 
-Use `r7-cli ask` to describe what you want in plain English. An LLM translates your request into the correct CLI command.
+Use `r7-cli ai` to describe what you want in plain English. An LLM translates your request into the correct CLI command.
 
 ```bash
 # Configure LLM provider (or set R7_LLM_PROVIDER + provider API key env vars)
-r7-cli --llm openai ask show me critical vulnerabilities
-r7-cli --llm claude ask how many assets do I have
-r7-cli --llm gemini ask list scans from the last week
+r7-cli --llm openai ai show me critical vulnerabilities
+r7-cli --llm claude ai how many assets do I have
+r7-cli --llm gemini ai list scans from the last week
 
 # Execute the generated command directly
-r7-cli --llm openai ask -x list all open investigations
+r7-cli --llm openai ai -x list all open investigations
 
 # Skip confirmation prompt
-r7-cli --llm claude ask -x -y check VM health
+r7-cli --llm claude ai -x -y check VM health
 ```
 
 Environment variables: `R7_LLM_PROVIDER`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`

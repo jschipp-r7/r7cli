@@ -84,8 +84,8 @@ def _walk_commands(
     if isinstance(group, click.MultiCommand):
         cmd_names = group.list_commands(parent_ctx)
         for name in cmd_names:
-            # Skip the 'ask' command itself to avoid recursion in the prompt
-            if name == "ask":
+            # Skip the 'ai' command itself to avoid recursion in the prompt
+            if name == "ai":
                 continue
             cmd = group.get_command(parent_ctx, name)
             if cmd is None:
@@ -223,7 +223,7 @@ _PROVIDERS = {
 # Click command
 # ---------------------------------------------------------------------------
 
-@click.command("ask")
+@click.command("ai")
 @click.argument("question", nargs=-1, required=True)
 @click.option("-x", "--execute", is_flag=True, help="Execute the generated command immediately.")
 @click.option("-y", "--yes", is_flag=True, help="Skip confirmation when using --execute.")
@@ -234,7 +234,7 @@ def ask_cmd(ctx, question, execute, yes, show_prompt):
 
     \b
     Requires an LLM provider to be configured via:
-      --llm openai|claude|gemini  (global flag, before 'ask')
+      --llm openai|claude|gemini  (global flag, before 'ai')
       --llm-key YOUR_KEY          (or use env vars below)
 
     \b
@@ -248,17 +248,17 @@ def ask_cmd(ctx, question, execute, yes, show_prompt):
     \b
     Examples:
       # Get the command for listing critical vulnerabilities
-      r7-cli --llm openai ask show me critical vulnerabilities
+      r7-cli --llm openai ai show me critical vulnerabilities
 
     \b
       # Execute directly
-      r7-cli --llm claude ask -x list all open investigations
+      r7-cli --llm claude ai -x list all open investigations
 
     \b
       # Using env vars (no --llm flag needed if R7_LLM_PROVIDER is set)
       export R7_LLM_PROVIDER=gemini
       export GEMINI_API_KEY=your-key
-      r7-cli ask how many assets do I have
+      r7-cli ai how many assets do I have
     """
     config: Config = ctx.obj["config"]
 

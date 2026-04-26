@@ -100,7 +100,7 @@ class SolutionGroup(click.MultiCommand):
     """Dynamic multi-command that routes to per-solution Click groups."""
 
     def list_commands(self, ctx: click.Context) -> list[str]:
-        return sorted(VALID_SOLUTIONS | {"validate", "tldr", "ask"})
+        return sorted(VALID_SOLUTIONS | {"validate", "tldr", "ai"})
 
     def get_command(self, ctx: click.Context, name: str) -> click.Command | None:
         if name == "help":
@@ -111,7 +111,7 @@ class SolutionGroup(click.MultiCommand):
             return _tldr_cmd
         if name == "validate":
             return _validate_cmd
-        if name == "ask":
+        if name == "ai":
             from r7cli.ask import ask_cmd
             return ask_cmd
         if name in STUB_SOLUTIONS:

@@ -127,7 +127,7 @@ r7-cli validate
 
 ---
 
-### `r7-cli ask` — Natural Language Commands
+### `r7-cli ai` — Natural Language Commands
 
 Translates a natural language request into the appropriate r7-cli command using an LLM (OpenAI, Claude, or Gemini). The system prompt is dynamically generated from the CLI's command tree, so it always stays in sync with available commands.
 
@@ -147,18 +147,18 @@ Requires `--llm` global flag (or `R7_LLM_PROVIDER` env var) and an API key for t
 
 ```bash
 # Show the command (doesn't execute)
-r7-cli --llm openai ask show me critical vulnerabilities
+r7-cli --llm openai ai show me critical vulnerabilities
 
 # Execute directly
-r7-cli --llm claude ask -x list all open investigations
+r7-cli --llm claude ai -x list all open investigations
 
 # Using env vars
 export R7_LLM_PROVIDER=gemini
 export GEMINI_API_KEY=your-key
-r7-cli ask how many assets do I have
+r7-cli ai how many assets do I have
 
 # Auto-execute without confirmation
-r7-cli --llm openai ask -x -y check VM health
+r7-cli --llm openai ai -x -y check VM health
 ```
 
 ---
