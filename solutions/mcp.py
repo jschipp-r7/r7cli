@@ -1083,3 +1083,89 @@ def mcp_load_parquet(ctx, parquet_path):
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
+
+
+# ---------------------------------------------------------------------------
+# mcp clean
+# ---------------------------------------------------------------------------
+
+_MCP_DATA_DIR = Path.home() / ".rapid7-mcp"
+
+
+@mcp_group.command("clean")
+@click.option("--all", "remove_all", is_flag=True, default=False,
+              help="Also remove MCP configuration files.")
+@click.option("-y", "--yes", is_flag=True, default=False,
+              help="Skip confirmation prompt.")
+@click.pass_context
+def mcp_clean(ctx, remove_all, yes):
+    """Remove downloaded MCP data files and optionally configuration.
+
+    \b
+    By default, removes the ~/.rapid7-mcp/ directory which contains:
+      - DuckDB database (rapid7_bulk_export.db)
+      - Downloaded Parquet files (imports/, downloads/)
+
+    \b
+    With --all, also removes the MCP server configuration from
+    .kiro/settings/mcp.json (the "rapid7-bulk-export" entry).
+
+    \b
+    Examples:
+      # Remove downloaded data
+      r7-cli vm export mcp clean
+
+    \b
+      # Remove data + configuration (no prompt)
+      r7-cli vm export mcp clean --all -y
+    """
+    config = _get_config(ctx)
+
+    # Gather what will be removed
+    targets = []
+    if _MCP_DATA_DIR.exists():
+        targets.append(("Data directory", _MCP_DATA_DIR))
+    if remove_all and _KIRO_MCP_CONFIG.exists():
+        targets.append(("MCP config", _KIRO_MCP_CONFIG))
+
+    if not targets:
+        click.echo("Nothing to clean — no MCP data or config found.")
+        return
+
+    # Show what will be removed
+    click.echo("The following will be removed:")
+    for label, path in targets:
+        click.echo(f"  {label}: {path}")
+
+    if not yes:
+        click.confirm("\nProceed?", abort=True)
+
+    # Remove data directory
+    if _MCP_DATA_DIR.exists():
+        shutil.rmtree(_MCP_DATA_DIR)
+        _log_verbose(config, f"Removed {_MCP_DATA_DIR}")
+        click.echo(f"✓ Removed {_MCP_DATA_DIR}")
+
+    # Remove configuration
+    if remove_all and _KIRO_MCP_CONFIG.exists():
+        try:
+            existing = json.loads(_KIRO_MCP_CONFIG.read_text())
+            servers = existing.get("mcpServers", {})
+            if "rapid7-bulk-export" in servers:
+                del servers["rapid7-bulk-export"]
+                if servers:
+                    # Other MCP servers remain — rewrite without ours
+                    _KIRO_MCP_CONFIG.write_text(json.dumps(existing, indent=2) + "\n")
+                    click.echo(f"✓ Removed rapid7-bulk-export from {_KIRO_MCP_CONFIG}")
+                else:
+                    # No servers left — remove the file
+                    _KIRO_MCP_CONFIG.unlink()
+                    click.echo(f"✓ Removed {_KIRO_MCP_CONFIG}")
+            else:
+                click.echo(f"  No rapid7-bulk-export entry in {_KIRO_MCP_CONFIG}")
+        except (json.JSONDecodeError, OSError):
+            # Can't parse — remove the file entirely
+            _KIRO_MCP_CONFIG.unlink()
+            click.echo(f"✓ Removed {_KIRO_MCP_CONFIG}")
+
+    click.echo("\nDone. Run `r7-cli vm export mcp server setup` to reconfigure.")
