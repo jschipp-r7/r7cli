@@ -12,14 +12,12 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any
 
 import click
 
 from r7cli.cli_group import GlobalFlagHintGroup
 from r7cli.config import Config
 from r7cli.models import R7Error, UserInputError
-from r7cli.output import format_output
 
 
 # ---------------------------------------------------------------------------
@@ -28,7 +26,6 @@ from r7cli.output import format_output
 
 _MCP_PACKAGE = "git+https://github.com/rapid7/rapid7-bulk-export-mcp.git"
 _MCP_SERVER_CMD = "rapid7-mcp-server"
-_VALID_EXPORT_TYPES = ("vulnerability", "policy", "remediation")
 
 # Kiro MCP config path (workspace-level)
 _KIRO_MCP_CONFIG = Path(".kiro/settings/mcp.json")
@@ -341,14 +338,14 @@ def mcp_group(ctx):
     """Rapid7 Bulk Export MCP server — install, configure, and query.
 
     \b
-    The MCP server provides AI-powered analysis of Rapid7 bulk export data
-    using a local DuckDB database. Use these commands to install the server,
-    load data, and run SQL queries from the command line.
+    The MCP server provides AI-powered analysis of Rapid7 vulnerability
+    export data using a local DuckDB database. Use these commands to set up
+    the server, export data, and run SQL queries from the command line.
 
     \b
     Quick start:
       r7-cli vm export mcp server setup   # Install + configure + verify
-      r7-cli vm export mcp download       # Download all available exports
+      r7-cli vm export mcp start          # Export vulns → poll → download → load
       r7-cli vm export mcp query "SELECT severity, COUNT(*) FROM vulnerabilities GROUP BY severity"
 
     \b
@@ -358,7 +355,7 @@ def mcp_group(ctx):
 
     \b
     Debugging:
-      r7-cli -v vm export mcp query ...   # Verbose: show request/response flow
+      r7-cli -v vm export mcp start       # Verbose: show request/response flow
       r7-cli --debug vm export mcp query ...  # Debug: full JSON payloads
     """
     pass
@@ -708,183 +705,111 @@ def mcp_configure(ctx, target):
 
 
 # ---------------------------------------------------------------------------
-# mcp start-export
+# mcp start (unified: export → poll → download)
 # ---------------------------------------------------------------------------
 
-@mcp_group.command("start-export")
-@click.option("--type", "export_type", type=click.Choice(_VALID_EXPORT_TYPES),
-              default="vulnerability", help="Export type (default: vulnerability).")
-@click.option("--start-date", default="", help="Start date YYYY-MM-DD (remediation only).")
-@click.option("--end-date", default="", help="End date YYYY-MM-DD (remediation only).")
+@mcp_group.command("start")
+@click.option("--output-dir", type=click.Path(), default=None,
+              help="Directory to save files (default: current dir).")
 @click.pass_context
-def mcp_start_export(ctx, export_type, start_date, end_date):
-    """Start a Rapid7 bulk export via the MCP server.
+def mcp_start(ctx, output_dir):
+    """Start a vulnerability export, wait for completion, and load into DuckDB.
 
     \b
-    Kicks off an export job on the Rapid7 platform. The export processes
-    in the background (typically 3-5 minutes). Use `mcp status` to check
-    progress, then `mcp download` to load the data.
+    This is the all-in-one command that:
+      1. Kicks off a vulnerability bulk export on the Rapid7 platform
+      2. Polls until the export completes (typically 3-5 minutes)
+      3. Downloads the data and loads it into the local DuckDB database
 
     \b
-    If an export from today already exists, it will be reused.
+    After this completes, you can query the data with:
+      r7-cli vm export mcp query "SELECT severity, COUNT(*) FROM vulnerabilities GROUP BY severity"
+
+    \b
+    Note: The MCP server currently supports vulnerability exports only.
 
     \b
     Examples:
-      # Start a vulnerability export
-      r7-cli vm export mcp start-export
+      # Export, wait, and load vulnerability data
+      r7-cli vm export mcp start
 
     \b
-      # Start a policy export
-      r7-cli vm export mcp start-export --type policy
+      # With verbose output to see progress
+      r7-cli -v vm export mcp start
 
     \b
-      # Start a remediation export with date range
-      r7-cli vm export mcp start-export --type remediation --start-date 2026-03-01 --end-date 2026-04-01
+      # Save files to a specific directory
+      r7-cli vm export mcp start --output-dir ./vuln-data
     """
     config = _get_config(ctx)
-    try:
-        arguments: dict[str, Any] = {"export_type": export_type}
-        if start_date:
-            arguments["start_date"] = start_date
-        if end_date:
-            arguments["end_date"] = end_date
 
-        result = _call_tool(config, "start_rapid7_export", arguments)
-        click.echo(result)
+    # Step 1: Start the export
+    click.echo("Starting vulnerability export…", err=True)
+    try:
+        start_result = _call_tool(config, "start_rapid7_export", {"export_type": "vulnerability"})
+        click.echo(f"  {start_result.splitlines()[0] if start_result else 'Export started'}", err=True)
     except R7Error as exc:
-        click.echo(str(exc), err=True)
+        click.echo(f"Failed to start export: {exc}", err=True)
         sys.exit(exc.exit_code)
 
+    # Extract export ID
+    export_id = _extract_export_id_from_text(start_result)
+    if not export_id:
+        click.echo(f"Could not extract export ID from response:", err=True)
+        click.echo(f"  {start_result}", err=True)
+        sys.exit(2)
 
-# ---------------------------------------------------------------------------
-# mcp status
-# ---------------------------------------------------------------------------
+    click.echo(f"  Export ID: {export_id}", err=True)
 
-@mcp_group.command("status")
-@click.option("-j", "--id", "export_id", required=True, help="Export ID to check.")
-@click.pass_context
-def mcp_status(ctx, export_id):
-    """Check the status of a Rapid7 export job.
-
-    \b
-    Examples:
-      r7-cli vm export mcp status --id <EXPORT_ID>
-    """
-    config = _get_config(ctx)
+    # Step 2: Poll until complete
+    click.echo("Waiting for export to complete…", err=True)
+    poll_timeout = time.monotonic() + 600  # 10 minute max
+    poll_count = 0
     try:
-        result = _call_tool(config, "check_rapid7_export_status", {"export_id": export_id})
-        click.echo(result)
-    except R7Error as exc:
-        click.echo(str(exc), err=True)
-        sys.exit(exc.exit_code)
+        while time.monotonic() < poll_timeout:
+            status_result = _call_tool(config, "check_rapid7_export_status", {"export_id": export_id})
+            status_upper = status_result.upper()
 
-
-# ---------------------------------------------------------------------------
-# mcp download
-# ---------------------------------------------------------------------------
-
-@mcp_group.command("download")
-@click.option("--type", "export_type", type=click.Choice(("vulnerability", "policy", "remediation", "asset")),
-              default=None, help="Download only this export type. Default: download all available.")
-@click.option("--output-dir", type=click.Path(), default=None, help="Directory to save files (default: current dir).")
-@click.pass_context
-def mcp_download(ctx, export_type, output_dir):
-    """Download available bulk exports and load into the MCP DuckDB database.
-
-    \b
-    By default, downloads ALL available export types (vulnerabilities,
-    policies, assets, remediations). Use --type to limit to a single type.
-
-    \b
-    This is the equivalent of `r7-cli vm export vulnerabilities --auto` but
-    routed through the MCP server for DuckDB loading.
-
-    \b
-    Examples:
-      # Download everything available
-      r7-cli vm export mcp download
-
-    \b
-      # Download only vulnerabilities
-      r7-cli vm export mcp download --type vulnerability
-
-    \b
-      # Download only policies to a specific directory
-      r7-cli vm export mcp download --type policy --output-dir ./exports
-    """
-    config = _get_config(ctx)
-
-    # Determine which types to download
-    if export_type:
-        types_to_download = [export_type]
-    else:
-        types_to_download = ["vulnerability", "policy", "asset"]
-        # Remediation requires date range — include it with a sensible default
-        types_to_download.append("remediation")
-
-    click.echo(f"Downloading all available exports: {', '.join(types_to_download)}", err=True)
-    if output_dir:
-        click.echo(f"Output directory: {output_dir}", err=True)
-
-    results: list[tuple[str, str]] = []  # (type, status)
-
-    for etype in types_to_download:
-        click.echo(f"\n{'─' * 40}", err=True)
-        click.echo(f"▶ Starting {etype} export…", err=True)
-
-        try:
-            # Start the export
-            arguments: dict[str, Any] = {"export_type": etype}
-            start_result = _call_tool(config, "start_rapid7_export", arguments)
-            click.echo(f"  {start_result.splitlines()[0] if start_result else 'Export started'}", err=True)
-
-            # Extract export ID from the response
-            export_id = _extract_export_id_from_text(start_result)
-            if not export_id:
-                click.echo(f"  Could not extract export ID. Raw response:", err=True)
-                click.echo(f"  {start_result}", err=True)
-                results.append((etype, "FAILED (no ID)"))
-                continue
-
-            # Poll until complete
-            click.echo(f"  Export ID: {export_id} — polling for completion…", err=True)
-            poll_timeout = time.monotonic() + 600  # 10 minute max
-            while time.monotonic() < poll_timeout:
-                status_result = _call_tool(config, "check_rapid7_export_status", {"export_id": export_id})
-                if "COMPLETE" in status_result.upper() or "SUCCEEDED" in status_result.upper():
-                    click.echo(f"  ✓ Export complete.", err=True)
-                    break
-                elif "FAILED" in status_result.upper() or "ERROR" in status_result.upper():
-                    click.echo(f"  ✗ Export failed: {status_result.splitlines()[0]}", err=True)
-                    results.append((etype, "FAILED"))
-                    break
-                else:
-                    _log_verbose(config, f"  Status: {status_result.splitlines()[0] if status_result else 'unknown'}")
-                    time.sleep(10)
+            if "COMPLETE" in status_upper or "SUCCEEDED" in status_upper:
+                click.echo("  ✓ Export complete.", err=True)
+                break
+            elif "FAILED" in status_upper or "ERROR" in status_upper:
+                click.echo(f"  ✗ Export failed: {status_result.splitlines()[0]}", err=True)
+                sys.exit(2)
             else:
-                click.echo(f"  ✗ Timed out waiting for {etype} export (10 min).", err=True)
-                results.append((etype, "TIMEOUT"))
-                continue
+                poll_count += 1
+                status_line = status_result.splitlines()[0] if status_result else "in progress"
+                if config.verbose or config.debug:
+                    click.echo(f"  [{poll_count}] {status_line}", err=True)
+                elif poll_count % 3 == 1:
+                    # Print a progress dot every ~30s to show we're alive
+                    click.echo(f"  Still processing… ({status_line})", err=True)
+                time.sleep(10)
+        else:
+            click.echo("  ✗ Timed out waiting for export (10 min).", err=True)
+            click.echo(f"  Export ID: {export_id}", err=True)
+            click.echo("  The export may still be running on the platform.", err=True)
+            sys.exit(2)
+    except R7Error as exc:
+        click.echo(f"  Error checking status: {exc}", err=True)
+        sys.exit(exc.exit_code)
 
-            # Download the completed export
-            if results and results[-1][0] == etype:
-                continue  # Already recorded a failure
+    # Step 3: Download and load
+    click.echo("Downloading and loading into DuckDB…", err=True)
+    try:
+        dl_result = _call_tool(config, "download_rapid7_export", {
+            "export_id": export_id,
+            "export_type": "vulnerability",
+        })
+        click.echo(f"  ✓ {dl_result.splitlines()[0] if dl_result else 'Data loaded'}", err=True)
+    except R7Error as exc:
+        click.echo(f"  ✗ Download failed: {exc}", err=True)
+        sys.exit(exc.exit_code)
 
-            dl_args: dict[str, Any] = {"export_id": export_id, "export_type": etype}
-            dl_result = _call_tool(config, "download_rapid7_export", dl_args)
-            click.echo(f"  ✓ Downloaded: {dl_result.splitlines()[0] if dl_result else 'done'}", err=True)
-            results.append((etype, "OK"))
-
-        except R7Error as exc:
-            click.echo(f"  ✗ Error: {exc}", err=True)
-            results.append((etype, f"ERROR: {exc}"))
-
-    # Summary
-    click.echo(f"\n{'─' * 40}", err=True)
-    click.echo("Download summary:", err=True)
-    for etype, status in results:
-        icon = "✓" if status == "OK" else "✗"
-        click.echo(f"  {icon} {etype}: {status}", err=True)
+    # Done
+    click.echo("")
+    click.echo("✓ Vulnerability data is ready. Query it with:")
+    click.echo('  r7-cli vm export mcp query "SELECT severity, COUNT(*) FROM vulnerabilities GROUP BY severity"')
 
 
 def _extract_export_id_from_text(text: str) -> str | None:
@@ -919,11 +844,8 @@ def mcp_query(ctx, sql):
     Supports all DuckDB SQL syntax.
 
     \b
-    Tables available after loading data:
-      - assets            (asset inventory)
+    Tables available after running `mcp start`:
       - vulnerabilities   (combined asset + vuln data)
-      - policies          (compliance results)
-      - vulnerability_remediation (remediation tracking)
 
     \b
     Examples:
@@ -937,10 +859,6 @@ def mcp_query(ctx, sql):
     \b
       # Assets with most vulns
       r7-cli vm export mcp query "SELECT hostName, COUNT(*) as cnt FROM vulnerabilities GROUP BY hostName ORDER BY cnt DESC LIMIT 10"
-
-    \b
-      # Policy failures
-      r7-cli vm export mcp query "SELECT ruleTitle, COUNT(*) FROM policies WHERE finalStatus='fail' GROUP BY ruleTitle ORDER BY 2 DESC LIMIT 10"
     """
     config = _get_config(ctx)
     try:
