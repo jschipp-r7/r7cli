@@ -5,6 +5,9 @@ All progress output goes to stderr so it never pollutes structured data on stdou
 from __future__ import annotations
 
 import sys
+import threading
+import time
+from contextlib import contextmanager
 
 import click
 
@@ -67,3 +70,35 @@ def progress_download(current: int, total: int, filename: str = "") -> None:
                 short = short[:19] + "…"
             label += f" {short}"
         progress_bar(frac, label)
+
+
+@contextmanager
+def spinner(label: str = "Working"):
+    """Context manager that shows an animated spinner on stderr while blocking.
+
+    Usage:
+        with spinner("Downloading"):
+            slow_blocking_call()
+
+    The spinner runs in a daemon thread and is cleaned up when the block exits.
+    """
+    frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+    stop_event = threading.Event()
+
+    def _spin():
+        idx = 0
+        while not stop_event.is_set():
+            frame = frames[idx % len(frames)]
+            click.echo(f"\r  {frame} {label}…", nl=False, err=True)
+            idx += 1
+            stop_event.wait(0.1)
+
+    t = threading.Thread(target=_spin, daemon=True)
+    t.start()
+    try:
+        yield
+    finally:
+        stop_event.set()
+        t.join(timeout=1.0)
+        # Clear the spinner line
+        click.echo("\r" + " " * (len(label) + 10) + "\r", nl=False, err=True)

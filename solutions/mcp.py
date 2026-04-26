@@ -18,6 +18,7 @@ import click
 from r7cli.cli_group import GlobalFlagHintGroup
 from r7cli.config import Config
 from r7cli.models import R7Error, UserInputError
+from r7cli.progress import spinner
 
 
 # ---------------------------------------------------------------------------
@@ -754,7 +755,11 @@ def mcp_start(ctx, output_dir):
     # Step 1: Start the export
     click.echo("Starting vulnerability export…", err=True)
     try:
-        start_result = _call_tool(config, "start_rapid7_export", {"export_type": "vulnerability"})
+        if config.debug:
+            start_result = _call_tool(config, "start_rapid7_export", {"export_type": "vulnerability"})
+        else:
+            with spinner("Starting export"):
+                start_result = _call_tool(config, "start_rapid7_export", {"export_type": "vulnerability"})
         click.echo(f"  {start_result.splitlines()[0] if start_result else 'Export started'}", err=True)
     except R7Error as exc:
         click.echo(f"Failed to start export: {exc}", err=True)
@@ -816,10 +821,17 @@ def mcp_start(ctx, output_dir):
     # Step 3: Download and load
     click.echo("Downloading and loading into DuckDB…", err=True)
     try:
-        dl_result = _call_tool(config, "download_rapid7_export", {
-            "export_id": export_id,
-            "export_type": "vulnerability",
-        })
+        if config.debug:
+            dl_result = _call_tool(config, "download_rapid7_export", {
+                "export_id": export_id,
+                "export_type": "vulnerability",
+            })
+        else:
+            with spinner("Downloading and loading data"):
+                dl_result = _call_tool(config, "download_rapid7_export", {
+                    "export_id": export_id,
+                    "export_type": "vulnerability",
+                })
         # Parse and display downloaded files
         _display_download_results(dl_result)
     except R7Error as exc:
