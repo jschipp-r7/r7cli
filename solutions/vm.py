@@ -1271,8 +1271,9 @@ def vulns(ctx):
 @click.option("--categories", default=None, help="Filter by categories (substring match, e.g. 'XSS').")
 @click.option("--published", default=None, help="Filter by published date (e.g. '>=2025-01-01').")
 @click.option("--cve", default=None, help="Filter by CVE ID (e.g. 'CVE-2025-0411').")
+@click.option("--force", is_flag=True, help="Force fetching all pages even for large datasets (>1000 pages).")
 @click.pass_context
-def vulns_search(ctx, size, cursor, asset_filter, vuln_filter, all_pages, auto_poll, interval, severity, cvss_score, categories, published, cve):
+def vulns_search(ctx, size, cursor, asset_filter, vuln_filter, all_pages, auto_poll, interval, severity, cvss_score, categories, published, cve, force):
     """List vulnerabilities (POST /v4/integration/vulnerabilities).
 
     \b
@@ -1333,6 +1334,32 @@ def vulns_search(ctx, size, cursor, asset_filter, vuln_filter, all_pages, auto_p
 
     try:
         if all_pages or has_filters:
+            # Check total vuln count before fetching all pages
+            if all_pages and not force:
+                count_result = client.post(url, json=body or None, params={"size": 1}, solution="vm", subcommand="vulns-count")
+                total = 0
+                total_pages = 0
+                if isinstance(count_result, dict):
+                    metadata = count_result.get("metadata", {})
+                    total = metadata.get("totalResources", 0)
+                    total_pages = (total + size - 1) // size if total else 0
+                if total_pages > 1000:
+                    click.echo(
+                        f"Your organization has {total:,} vulnerabilities ({total_pages:,} pages). "
+                        f"For datasets over 1,000 pages, we recommend using the more efficient "
+                        f"bulk export APIs:\n\n"
+                        f"  r7-cli vm export vulnerabilities --auto\n\n"
+                        f"Then use 'r7-cli vm export list' to filter the downloaded data locally.\n\n"
+                        f"To proceed anyway, use --force.",
+                        err=True,
+                    )
+                    sys.exit(0)
+                elif total > 10000:
+                    click.echo(
+                        f"Fetching {total:,} vulnerabilities ({total_pages:,} pages) — this may take a while.",
+                        err=True,
+                    )
+
             all_items = _paginate_v4_post(client, config, url, params, body, "vulns-search")
             if has_filters:
                 all_items = _filter_vm_vulns(all_items, severity=severity, cvss_score=cvss_score, categories=categories, published=published, cve=cve)
