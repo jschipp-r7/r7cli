@@ -88,7 +88,12 @@ def _poll_export(
 
     Returns the final export payload dict.
     """
+    from r7cli.progress import progress_bar, progress_done
+
     gql_url = IVM_BULK_GQL.format(region=config.region)
+    poll_count = 0
+    # Estimate ~5 min typical export; cap at 95% until done
+    estimated_polls = 30  # 30 * 10s = 5 min
     while True:
         result = client.post(
             gql_url,
@@ -99,8 +104,11 @@ def _poll_export(
         export = result.get("data", {}).get("export", {})
         status = export.get("status", "")
         if status in ("SUCCEEDED", "FAILED"):
+            progress_done(f"Export {status.lower()}.")
             return export
-        click.echo(f"Job {job_id} status: {status} — polling in {poll_interval}s …", err=True)
+        poll_count += 1
+        frac = min(poll_count / estimated_polls, 0.95)
+        progress_bar(frac, f"status: {status} (polling every {poll_interval}s)")
         time.sleep(poll_interval)
 
 
@@ -117,10 +125,13 @@ def _download_parquet_urls(
     ``{prefix}.{timestamp}.parquet`` (or ``{prefix}.{timestamp}.{idx}.parquet``
     for multi-URL entries) instead of using the raw S3 filename.
     """
+    from r7cli.progress import progress_download, progress_done
+
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
     saved: list[Path] = []
     multi = len(urls) > 1
+    total = len(urls)
     for idx, url in enumerate(urls):
         if prefix and timestamp:
             # Flatten prefix: replace / with _ to avoid subdirectories
@@ -134,11 +145,12 @@ def _download_parquet_urls(
         else:
             filename = url.rsplit("/", 1)[-1].split("?")[0] or "export.parquet"
         dest = out / filename
+        progress_download(idx + 1, total, filename)
         # Use the underlying httpx client for raw download
         resp = client._http.get(url)
         dest.write_bytes(resp.content)
-        click.echo(f"Downloaded {dest}", err=True)
         saved.append(dest)
+    progress_done(f"Downloaded {total} file(s) to {out}/")
     return saved
 
 
@@ -165,34 +177,58 @@ def is_private_ip(ip_str: str) -> bool:
 
 def _paginate_v4(client: R7Client, config: Config, url: str, subcommand: str) -> list[dict]:
     """Follow ``links`` pagination on IVM v4 endpoints, collecting all records."""
+    from r7cli.progress import progress_pages, progress_done
+
     all_records: list[dict] = []
     next_url: str | None = url
+    page_num = 0
+    total_pages: int | None = None
     while next_url:
         result = client.get(next_url, solution="vm", subcommand=subcommand)
         resources = result.get("resources", result.get("data", []))
         if isinstance(resources, list):
             all_records.extend(resources)
+        page_num += 1
+        # Try to extract total from page metadata
+        if total_pages is None:
+            page_meta = result.get("page", {})
+            if isinstance(page_meta, dict):
+                total_pages = page_meta.get("totalPages", page_meta.get("total_pages"))
+        progress_pages(page_num, total_pages, len(all_records))
         # Follow next link
         next_url = None
         for link in result.get("links", []):
             if link.get("rel") == "next":
                 next_url = link.get("href")
                 break
+    progress_done(f"Fetched {len(all_records)} records across {page_num} page(s).")
     return all_records
 
 
 def _paginate_v4_post(client, config, url, params, body, subcommand):
     """Cursor-based pagination for IVM v4 POST endpoints (e.g. /integration/vulnerabilities)."""
+    from r7cli.progress import progress_pages, progress_done
+
     all_records: list[dict] = []
     cur_params = dict(params)
+    page_num = 0
+    total_pages: int | None = None
     while True:
         result = client.post(url, json=body or None, params=cur_params, solution="vm", subcommand=subcommand)
         resources = result.get("resources", result.get("data", []))
         if isinstance(resources, list):
             all_records.extend(resources)
+        page_num += 1
+        # Try to extract total from metadata
+        metadata = result.get("metadata", {})
+        if isinstance(metadata, dict):
+            if total_pages is None:
+                tp = metadata.get("totalPages", metadata.get("total_pages"))
+                if tp is not None:
+                    total_pages = int(tp)
+        progress_pages(page_num, total_pages, len(all_records))
         # Follow next cursor
         next_cursor = None
-        metadata = result.get("metadata", {})
         if isinstance(metadata, dict) and metadata.get("cursor"):
             next_cursor = metadata["cursor"]
         if next_cursor is None:
@@ -209,6 +245,7 @@ def _paginate_v4_post(client, config, url, params, body, subcommand):
         if not next_cursor or not resources:
             break
         cur_params = dict(params, cursor=next_cursor)
+    progress_done(f"Fetched {len(all_records)} records across {page_num} page(s).")
     return all_records
 
 

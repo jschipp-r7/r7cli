@@ -373,6 +373,8 @@ def _interactive_select_blackout(items):
 
 def _fetch_all_pages(client, config, url, params, solution, subcommand):
     """Fetch all pages from a paginated InsightAppSec endpoint."""
+    from r7cli.progress import progress_pages, progress_done
+
     page_size = params.get("size", 50)
     current_index = params.get("index", 0)
     all_items = []
@@ -395,6 +397,7 @@ def _fetch_all_pages(client, config, url, params, solution, subcommand):
                 total_pages = metadata.get("totalPages", metadata.get("total_pages"))
 
         current_index += 1
+        progress_pages(current_index, total_pages, len(all_items))
 
         if total_pages is not None:
             if current_index >= total_pages:
@@ -404,11 +407,14 @@ def _fetch_all_pages(client, config, url, params, solution, subcommand):
             if len(items) < page_size:
                 break
 
+    progress_done(f"Fetched {len(all_items)} records across {current_index} page(s).")
     return all_items
 
 
 def _fetch_all_pages_post(client, config, url, params, body, solution, subcommand):
     """Fetch all pages from a paginated InsightAppSec POST endpoint (e.g. /search)."""
+    from r7cli.progress import progress_pages, progress_done
+
     page_size = params.get("size", 50)
     current_index = params.get("index", 0)
     all_items = []
@@ -430,6 +436,7 @@ def _fetch_all_pages_post(client, config, url, params, body, solution, subcomman
                 total_pages = metadata.get("totalPages", metadata.get("total_pages"))
 
         current_index += 1
+        progress_pages(current_index, total_pages, len(all_items))
 
         if total_pages is not None:
             if current_index >= total_pages:
@@ -438,6 +445,7 @@ def _fetch_all_pages_post(client, config, url, params, body, solution, subcomman
             if len(items) < page_size:
                 break
 
+    progress_done(f"Fetched {len(all_items)} records across {current_index} page(s).")
     return all_items
 
 
@@ -3152,11 +3160,14 @@ def reports_download(ctx, item_id, auto_select, output_path, poll, poll_interval
 
         resp.raise_for_status()
 
+        from r7cli.progress import progress_bar, progress_done
+        progress_bar(1.0, f"downloaded {report_name}")
+
         with open(output_path, "wb") as f:
             f.write(resp.content)
 
         size_kb = len(resp.content) / 1024
-        click.echo(f"Downloaded: {output_path} ({size_kb:.1f} KB)", err=True)
+        progress_done(f"Downloaded: {output_path} ({size_kb:.1f} KB)")
 
     except httpx.HTTPStatusError as exc:
         click.echo(f"Download failed: {exc.response.status_code} {exc.response.reason_phrase}", err=True)

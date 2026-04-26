@@ -416,6 +416,8 @@ def _poll_log_query(client: R7Client, config: Config, links: list[dict], max_pag
 
     Returns a list of log event strings.
     """
+    from r7cli.progress import progress_pages, progress_done
+
     events: list[str] = []
     pages_fetched = 0
 
@@ -475,8 +477,7 @@ def _poll_log_query(client: R7Client, config: Config, links: list[dict], max_pag
 
         # Query complete for this page
         pages_fetched += 1
-        if config.verbose:
-            click.echo(f"  Page {pages_fetched}/{max_pages} — {len(page_events)} events", err=True)
+        progress_pages(pages_fetched, max_pages, len(events))
 
         if next_url:
             # More pages — follow Next (which starts a new async query)
@@ -485,6 +486,7 @@ def _poll_log_query(client: R7Client, config: Config, links: list[dict], max_pag
             # No more pages
             break
 
+    progress_done(f"Fetched {len(events)} events across {pages_fetched} page(s).")
     return events
 
 
@@ -1145,6 +1147,8 @@ def investigations_list(ctx, index, size, all_pages, auto_poll, interval, status
         return filtered
 
     def _fetch_all_idr_pages():
+        from r7cli.progress import progress_pages, progress_done
+
         all_items = []
         current_index = index
         while True:
@@ -1155,8 +1159,10 @@ def investigations_list(ctx, index, size, all_pages, auto_poll, interval, status
             metadata = result.get("metadata", {})
             total_pages = metadata.get("total_pages", 1)
             current_index += 1
+            progress_pages(current_index, total_pages, len(all_items))
             if current_index >= total_pages:
                 break
+        progress_done(f"Fetched {len(all_items)} records across {current_index} page(s).")
         return all_items
 
     params = {"index": index, "size": size}
@@ -1312,6 +1318,8 @@ def users_search(ctx, index, size, all_pages, data_str, data_file):
             result = client.post(url, json=body, params=params, solution="siem", subcommand="users-list")
             click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
         else:
+            from r7cli.progress import progress_pages, progress_done
+
             all_data: list[dict] = []
             page = index
             while True:
@@ -1321,11 +1329,11 @@ def users_search(ctx, index, size, all_pages, data_str, data_file):
                 all_data.extend(items)
                 meta = result.get("metadata", {}) if isinstance(result, dict) else {}
                 total_pages = meta.get("total_pages", 1)
-                if config.verbose:
-                    click.echo(f"Page {page + 1}/{total_pages} — {len(items)} items", err=True)
                 page += 1
+                progress_pages(page, total_pages, len(all_data))
                 if page >= total_pages:
                     break
+            progress_done(f"Fetched {len(all_data)} records across {page} page(s).")
             click.echo(format_output(all_data, config.output_format, config.limit, config.search, short=config.short))
     except R7Error as exc:
         click.echo(str(exc), err=True)
@@ -3085,9 +3093,12 @@ def agents_list(ctx, agent_limit, all_pages, auto_poll, interval):
     gql_url = IDR_GQL.format(region=config.region)
 
     try:
+        from r7cli.progress import progress_pages, progress_done
+
         org_id = _resolve_org_id(client, config)
         cursor = None
         all_records: list[dict] = []
+        page_num = 0
 
         while True:
             variables: dict[str, Any] = {"orgId": org_id, "first": agent_limit, "cursor": cursor}
@@ -3116,10 +3127,18 @@ def agents_list(ctx, agent_limit, all_pages, auto_poll, interval):
                 record = _flatten_agent_node(node)
                 all_records.append(record)
 
+            page_num += 1
+            if all_pages:
+                # Total unknown for GraphQL cursor pagination
+                progress_pages(page_num, None, len(all_records))
+
             if all_pages and page_info.get("hasNextPage"):
                 cursor = page_info.get("endCursor")
             else:
                 break
+
+        if all_pages and page_num > 1:
+            progress_done(f"Fetched {len(all_records)} agents across {page_num} page(s).")
 
         filtered = all_records
 
