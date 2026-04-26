@@ -413,7 +413,7 @@ def assets(ctx):
 @click.option("--tag", default=None, help="Filter by tag name (substring match).")
 @click.option("--risk-score", default=None, help="Filter by risk_score (e.g. '>=10000', '>0').")
 @click.option("--critical-vulns", default=None, help="Filter by critical_vulnerabilities count (e.g. '>=1', '>10').")
-@click.option("--force", is_flag=True, help="Force fetching all pages even for large datasets (>10k assets).")
+@click.option("--force", is_flag=True, help="Force fetching all pages even for large datasets (>4k assets).")
 @click.pass_context
 def assets_search(ctx, size, cursor, asset_filter, vuln_filter, all_pages, auto_poll, interval, hostname, ip, os_family, tag, risk_score, critical_vulns, force):
     """List assets (POST /v4/integration/assets).
@@ -486,9 +486,9 @@ def assets_search(ctx, size, cursor, asset_filter, vuln_filter, all_pages, auto_
                 total = 0
                 if isinstance(count_result, dict):
                     total = count_result.get("metadata", {}).get("totalResources", 0)
-                if total > 10000:
+                if total > 4000:
                     click.echo(
-                        f"Your organization has {total:,} assets. For datasets over 10,000 assets, "
+                        f"Your organization has {total:,} assets. For datasets over 4,000 assets, "
                         f"we recommend using the more efficient bulk export APIs:\n\n"
                         f"  r7-cli vm export vulnerabilities --auto\n\n"
                         f"Then use 'r7-cli vm export list' to filter the downloaded data locally.\n\n"
