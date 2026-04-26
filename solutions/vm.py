@@ -497,6 +497,13 @@ def assets_search(ctx, size, cursor, asset_filter, vuln_filter, all_pages, auto_
                         err=True,
                     )
                     sys.exit(0)
+                elif total > 5000:
+                    click.echo(
+                        f"Fetching {total:,} assets — this may take a few minutes. "
+                        f"Consider using the bulk export API for faster results:\n\n"
+                        f"  r7-cli vm export vulnerabilities --auto\n",
+                        err=True,
+                    )
                 elif total > 3000:
                     click.echo(
                         f"Fetching {total:,} assets — this may take a few minutes.",
