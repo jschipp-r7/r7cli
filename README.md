@@ -1,6 +1,30 @@
 # r7-cli
 
-A unified CLI for the Rapid7 Insight Platform. Manage InsightVM, InsightIDR, Surface Command, DRP, InsightCloudSec, InsightAppSec, and InsightConnect from your terminal.
+The Rapid7 Command Platform at your finger tips. Easily query, update, and manage Rapid7 solutions in a single tool.
+
+```bash
+$ r7-cli platform matrix
+Display the licensed Rapid7 products that you're authorized for, not authorized for, and the ones that are not applicable.
++---------------+----------+------------+-----------+----------+-----------+-----------+
+|               | GOVERN   | IDENTIFY   | PROTECT   | DETECT   | RESPOND   | RECOVER   |
++===============+==========+============+===========+==========+===========+===========+
+| DEVICES       | 🚫       | ✅         | ✅        | ✅       | ✅        | N/A       |
++---------------+----------+------------+-----------+----------+-----------+-----------+
+| SOFTWARE      | 🚫       | ✅         | ✅        | ✅       | ✅        | N/A       |
++---------------+----------+------------+-----------+----------+-----------+-----------+
+| NETWORK       | 🚫       | ✅         | ✅        | ✅       | ✅        | N/A       |
++---------------+----------+------------+-----------+----------+-----------+-----------+
+| USERS         | 🚫       | ✅         | ✅        | ✅       | ✅        | N/A       |
++---------------+----------+------------+-----------+----------+-----------+-----------+
+| DATA          | 🚫       | 🚫         | ✅        | ✅       | ✅        | N/A       |
++---------------+----------+------------+-----------+----------+-----------+-----------+
+| DOCUMENTATION | 🚫       | N/A        | 🚫        | 🚫       | ✅        | N/A       |
++---------------+----------+------------+-----------+----------+-----------+-----------+
+
+Recommended products to improve your coverage:
+  + Cyber GRC             (+8 cells)
+  + DSPM                  (+1 cells)
+```
 
 > Full API reference, command tables, and detailed usage: [docs/REFERENCE.md](docs/REFERENCE.md)
 
@@ -23,14 +47,14 @@ r7-cli --help
 
 | Command | Product | Auth |
 |---------|---------|------|
-| `r7-cli vm` | InsightVM | API key |
-| `r7-cli siem` | InsightIDR | API key |
-| `r7-cli asm` | Surface Command | API key |
+| `r7-cli vm` | InsightVM | Platform API key |
+| `r7-cli siem` | InsightIDR | Platform API key |
+| `r7-cli asm` | Surface Command | Platform API key |
 | `r7-cli drp` | Digital Risk Protection | DRP token |
-| `r7-cli appsec` | InsightAppSec | API key |
-| `r7-cli cnapp` | InsightCloudSec | API key |
-| `r7-cli soar` | InsightConnect | API key |
-| `r7-cli platform` | Platform admin | API key |
+| `r7-cli appsec` | InsightAppSec | Platform API key |
+| `r7-cli cnapp` | InsightCloudSec | InsightCloudSec API key |
+| `r7-cli soar` | InsightConnect | Platform API key |
+| `r7-cli platform` | Platform admin | Platform API key |
 
 ## Common Usage
 
