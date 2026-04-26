@@ -191,23 +191,43 @@ def _read_response(proc: subprocess.Popen, config: Config, timeout: int = _MCP_R
     object per line.  We read lines until we get a valid JSON-RPC response
     (has an "id" field), skipping notifications and log messages.
 
+    Uses a background thread to perform blocking readline() calls, with
+    timeout enforcement in the main thread.  This avoids select()+read(1)
+    issues with Python TextIOWrapper buffering on macOS.
+
     Raises TimeoutError if no response is received within the timeout period.
     """
-    import select
+    import queue
+    import threading
 
     deadline = time.monotonic() + timeout
     _log_debug(config, f"← Waiting for response (timeout: {timeout}s)…")
 
-    buffer = ""
-    while True:
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            raise TimeoutError(f"Timed out waiting for MCP response after {timeout}s")
+    # Use a thread to do blocking readline — avoids select/buffering issues
+    line_queue: queue.Queue[str | None] = queue.Queue()
 
-        # Use select for timeout on reads (Unix)
-        if hasattr(select, "select"):
-            ready, _, _ = select.select([proc.stdout], [], [], min(remaining, 1.0))
-            if not ready:
+    def _reader():
+        try:
+            while True:
+                line = proc.stdout.readline()
+                line_queue.put(line)
+                if line == "":  # EOF
+                    break
+        except (OSError, ValueError):
+            line_queue.put(None)
+
+    reader_thread = threading.Thread(target=_reader, daemon=True)
+    reader_thread.start()
+
+    try:
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError(f"Timed out waiting for MCP response after {timeout}s")
+
+            try:
+                line = line_queue.get(timeout=min(remaining, 1.0))
+            except queue.Empty:
                 # Check if process is still alive
                 if proc.poll() is not None:
                     stderr_output = proc.stderr.read() if proc.stderr else ""
@@ -218,20 +238,17 @@ def _read_response(proc: subprocess.Popen, config: Config, timeout: int = _MCP_R
                     )
                 continue
 
-        ch = proc.stdout.read(1)
-        if ch == "":
-            stderr_output = proc.stderr.read() if proc.stderr else ""
-            raise R7Error(
-                f"MCP server closed unexpectedly. stderr: {stderr_output.strip() or '(empty)'}",
-                exit_code=2,
-            )
+            if line is None or line == "":
+                stderr_output = proc.stderr.read() if proc.stderr else ""
+                raise R7Error(
+                    f"MCP server closed unexpectedly. stderr: {stderr_output.strip() or '(empty)'}",
+                    exit_code=2,
+                )
 
-        buffer += ch
-        if ch == "\n":
-            line = buffer.strip()
-            buffer = ""
+            line = line.strip()
             if not line:
                 continue
+
             try:
                 msg = json.loads(line)
             except json.JSONDecodeError:
@@ -245,6 +262,9 @@ def _read_response(proc: subprocess.Popen, config: Config, timeout: int = _MCP_R
             else:
                 _log_debug(config, f"← Skipping notification: method={msg.get('method', 'N/A')}")
                 continue
+    finally:
+        # Thread is daemon, will die when process terminates
+        pass
 
 
 def _call_tool(config: Config, tool_name: str, arguments: dict | None = None) -> str:
@@ -1080,13 +1100,53 @@ def mcp_load_parquet(ctx, parquet_path):
 _MCP_DATA_DIR = Path.home() / ".rapid7-mcp"
 
 
+def _kill_stale_mcp_processes(config: Config, yes: bool = False) -> None:
+    """Find and kill orphaned rapid7-mcp-server processes."""
+    import signal as _signal
+
+    try:
+        # Use pgrep to find rapid7-mcp-server processes (excludes current process)
+        result = subprocess.run(
+            ["pgrep", "-f", _MCP_SERVER_CMD],
+            capture_output=True, text=True,
+        )
+        pids = [int(p) for p in result.stdout.strip().split("\n") if p.strip()]
+    except (subprocess.SubprocessError, ValueError):
+        pids = []
+
+    if not pids:
+        click.echo("No stale rapid7-mcp-server processes found.")
+        return
+
+    click.echo(f"Found {len(pids)} rapid7-mcp-server process(es): {', '.join(str(p) for p in pids)}")
+
+    if not yes:
+        click.confirm("Kill these processes?", abort=True)
+
+    killed = 0
+    for pid in pids:
+        try:
+            os.kill(pid, _signal.SIGTERM)
+            killed += 1
+            _log_verbose(config, f"Sent SIGTERM to PID {pid}")
+        except ProcessLookupError:
+            _log_debug(config, f"PID {pid} already gone")
+        except PermissionError:
+            click.echo(f"  ✗ Permission denied for PID {pid}", err=True)
+
+    if killed:
+        click.echo(f"✓ Terminated {killed} stale process(es).")
+
+
 @mcp_group.command("clean")
 @click.option("--all", "remove_all", is_flag=True, default=False,
               help="Also remove MCP configuration files.")
+@click.option("--kill-stale", is_flag=True, default=False,
+              help="Kill orphaned rapid7-mcp-server processes.")
 @click.option("-y", "--yes", is_flag=True, default=False,
               help="Skip confirmation prompt.")
 @click.pass_context
-def mcp_clean(ctx, remove_all, yes):
+def mcp_clean(ctx, remove_all, kill_stale, yes):
     """Remove downloaded MCP data files and optionally configuration.
 
     \b
@@ -1099,15 +1159,29 @@ def mcp_clean(ctx, remove_all, yes):
     .kiro/settings/mcp.json (the "rapid7-bulk-export" entry).
 
     \b
+    With --kill-stale, finds and terminates any orphaned rapid7-mcp-server
+    processes that may be holding DuckDB locks.
+
+    \b
     Examples:
       # Remove downloaded data
       r7-cli vm export mcp clean
+
+    \b
+      # Kill stale server processes
+      r7-cli vm export mcp clean --kill-stale
 
     \b
       # Remove data + configuration (no prompt)
       r7-cli vm export mcp clean --all -y
     """
     config = _get_config(ctx)
+
+    # --- Kill stale processes ---
+    if kill_stale:
+        _kill_stale_mcp_processes(config, yes=yes)
+        if not remove_all and not _MCP_DATA_DIR.exists():
+            return
 
     # Gather what will be removed
     targets = []
