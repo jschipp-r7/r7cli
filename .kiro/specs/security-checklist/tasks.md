@@ -8,7 +8,7 @@ Implement the `security-checklist` top-level CLI command that fetches licensed R
 
 - [x] 1. Create `security_checklist.py` with static data constants and pure functions
   - [x] 1.1 Define module-level constants: `PRODUCT_CODE_MAP`, `NIST_STAGES`, `CIS_ASSET_TYPES`, and `CELL_MAPPING`
-    - `PRODUCT_CODE_MAP` maps 11 product codes to canonical names per the design (SC, ICS, IVM, IDR, OPS, ICON, TC, AS, MDR, DSPM, CGRC)
+    - `PRODUCT_CODE_MAP` maps 13 product codes to canonical names (SC, ICS, IVM, IDR, OPS, ICON, IH, TC, AS, CAS, MDR, DSPM, CGRC)
     - `NIST_STAGES` = ["GOVERN", "IDENTIFY", "PROTECT", "DETECT", "RESPOND", "RECOVER"]
     - `CIS_ASSET_TYPES` = ["DEVICES", "SOFTWARE", "NETWORK", "USERS", "DATA", "DOCUMENTATION"]
     - `CELL_MAPPING` is a `dict[tuple[str, str], set[str] | None]` with all 36 entries per the design table
@@ -76,7 +76,7 @@ Implement the `security-checklist` top-level CLI command that fetches licensed R
   - [ ]* 3.3 Write unit tests for command registration and error handling
     - Verify `security-checklist` appears in `SolutionGroup.list_commands()`
     - Verify `--help` output contains expected description
-    - Verify `PRODUCT_CODE_MAP` has 11 entries with correct values
+    - Verify `PRODUCT_CODE_MAP` has 13 entries with correct values
     - Verify `CELL_MAPPING` has exactly 36 entries
     - Verify GOVERN column maps to {"Cyber GRC"} and RECOVER column maps to None
     - Verify auth error (mocked 401) produces exit code 2

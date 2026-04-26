@@ -166,4 +166,5 @@ The `--reality` / `--deployment` option extends the existing `matrix rapid7` com
 
 - Additional deployment checks added beyond the original 5: event sources (no event sources → -75%, fewer than 5 → -50%), stale/offline agents (dynamic: 10% reduction per 10% unhealthy), active InsightConnect workflows (no workflows → -10% DETECT), Surface Command connectors (fewer than 5 third-party → -50%)
 - `--scoring` flag added to print all scoring rules
+- `--json` flag added for JSON matrix output
 - `build_recommendations()` added for product recommendations

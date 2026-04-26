@@ -17,6 +17,7 @@ The workspace root is the `r7cli` Python package itself (mapped via `pyproject.t
 ├── compliance.py          # VM policy export → SQL dump pipeline + CIS controls list subcommand
 ├── matrix.py              # NIST CSF × CIS v8 coverage matrix with deployment-aware scoring
 ├── cis.py                 # CIS/NIST CSF controls lookup — shared by per-solution `cis` subcommands and compliance list
+├── status.py              # Rapid7 platform status — fetches from status.rapid7.com (no auth required)
 ├── controls.csv           # Master controls CSV (CIS, NIST CSF, PCI DSS, HITRUST, MITRE) with Rapid7 product mappings
 ├── product-market.mappings # Market technology → Rapid7 product mapping (tab-delimited)
 ├── parquet_filter.py      # Parquet file resolution, schema detection, filtering, auto-join for local exports
@@ -34,6 +35,8 @@ The workspace root is the `r7cli` Python package itself (mapped via `pyproject.t
 ├── tests/
 │   ├── __init__.py
 │   └── test_download_mkdir.py  # Hypothesis property-based tests for parquet download
+├── docs/
+│   └── REFERENCE.md       # CLI reference documentation
 └── pyproject.toml         # Build config, dependencies, entry point
 ```
 
@@ -41,7 +44,7 @@ The workspace root is the `r7cli` Python package itself (mapped via `pyproject.t
 
 - Each solution module defines a Click group (e.g. `vm`, `siem`) with subcommand groups and leaf commands
 - Solution modules are lazily imported by `SolutionGroup.get_command()` in `main.py`
-- `platform.py` registers cross-cutting subgroups: `agents`, `extensions`, `compliance`, `matrix`
+- `platform.py` registers cross-cutting subgroups: `assets`, `extensions`, `compliance`, `matrix`, `status`
 - All solution commands follow the same pattern: get config from context → create R7Client → call API → format output
 - Helper functions `_extract_items()`, `_extract_item_id()`, `_resolve_body()` are duplicated across solution modules (not shared)
 - Interactive selection (`--auto` / `-a`) uses `questionary` for terminal prompts

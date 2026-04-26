@@ -130,10 +130,11 @@ Add a top-level `security-checklist` command to the r7-cli tool, invoked as `r7-
 
 - Module renamed from `security_checklist.py` to `matrix.py`
 - Command moved from top-level `r7-cli security-checklist` to `r7-cli platform matrix`
-- Product code map updated: "IH" and "TC" both map to "DRP", "CAS" maps to Vector Command
-- Cell mappings updated with DRP in DETECT/RESPOND, percentages added to cells
+- Product code map updated: "IH" and "TC" both map to "DRP", "CAS" maps to "Vector Command", "ICON" maps to "SOAR" (was "insightConnect")
+- Cell mappings significantly expanded: IDENTIFY cells now include insightCloudSec and insightIDR; PROTECT/DATA adds insightCloudSec; DETECT adds DRP and Cyber GRC for DOCUMENTATION; RESPOND uses SOAR instead of insightConnect, adds DRP to NETWORK, adds Cyber GRC+SOAR to DOCUMENTATION; percentages added to all cells via `CELL_PERCENT_MAPPING`
 - `--scoring` flag added to print scoring rules
 - `--solution` flag added to show product names per cell
+- `--json` flag added for JSON matrix output
 - `build_recommendations()` function added for product recommendations
 - Backward-compat alias `security_checklist = matrix` removed
 - Per-solution `cis` subcommand added to every solution group (vm, siem, asm, drp, appsec, cnapp, soar) via `cis.make_cis_command()` — lists CIS/NIST CSF controls relevant to each product from `controls.csv`

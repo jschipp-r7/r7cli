@@ -15,13 +15,21 @@ r7-cli is a CLI for the Rapid7 Command Platform. It wraps multiple security prod
 | `siem`       | InsightIDR           | API key     | GraphQL for agents; REST for everything else|
 | `asm`        | Surface Command      | API key     | Cypher query language                       |
 | `drp`        | Digital Risk Prot.   | DRP token   | Separate token format (`user:key`)          |
-| `platform`   | Platform admin       | API key     | Cross-cutting: hosts `agents`, `extensions`, `compliance`, `matrix` subgroups |
+| `platform`   | Platform admin       | API key     | Cross-cutting: hosts `assets`, `extensions`, `compliance`, `matrix`, `status` subgroups |
 | `appsec`     | InsightAppSec        | API key     |                                             |
 | `cnapp`      | InsightCloudSec      | API key     | Separate base URL (`insightcloudsec_url`)   |
 | `soar`       | InsightConnect       | API key     |                                             |
 | `compliance` | VM policy pipeline   | API key     | Registered under `platform`                 |
 | `matrix`     | Coverage matrix      | none        | Offline NIST CSF × CIS v8 scoring           |
+| `status`     | Platform status      | none        | Fetches from status.rapid7.com, no auth     |
 | `extensions` | Extension Library    | none        | No auth required                            |
+
+## Top-Level Utility Commands
+
+| CLI name     | Purpose                                                    |
+|--------------|------------------------------------------------------------|
+| `validate`   | Validate API key against the Insight Platform              |
+| `tldr`       | Show quick-reference examples for common commands          |
 
 ## Market Technologies
 
