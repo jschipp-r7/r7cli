@@ -340,6 +340,36 @@ def _remove_pid_file() -> None:
         pass
 
 
+def _auto_configure_api_key(config: Config) -> None:
+    """Write the API key and region into the Kiro MCP config file.
+
+    Creates or updates .kiro/settings/mcp.json so the MCP server can
+    authenticate without requiring env vars at runtime.
+    """
+    config_path = _KIRO_MCP_CONFIG
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+
+    mcp_config: dict = {}
+    if config_path.exists():
+        try:
+            mcp_config = json.loads(config_path.read_text())
+        except (json.JSONDecodeError, OSError):
+            mcp_config = {}
+
+    mcp_config.setdefault("mcpServers", {})
+    mcp_config["mcpServers"]["rapid7-bulk-export"] = {
+        "command": _MCP_SERVER_CMD,
+        "args": [],
+        "env": {
+            "RAPID7_API_KEY": config.api_key,
+            "RAPID7_REGION": config.region,
+        },
+    }
+
+    config_path.write_text(json.dumps(mcp_config, indent=2) + "\n")
+    click.echo(f"✓ API key configured in {config_path}", err=True)
+
+
 # ---------------------------------------------------------------------------
 # Click group: vm export mcp
 # ---------------------------------------------------------------------------
@@ -410,6 +440,11 @@ def mcp_server_start(ctx):
     Use `server status` to check if it's running, and `server stop` to shut it down.
 
     \b
+    If the MCP server is not installed, it will be installed automatically.
+    The API key from your current config is written to the Kiro MCP config
+    so the server can authenticate on startup.
+
+    \b
     Examples:
       r7-cli vm export mcp server start
       r7-cli -v vm export mcp server start
@@ -418,10 +453,34 @@ def mcp_server_start(ctx):
 
     server_cmd = _find_mcp_server()
     if not server_cmd:
-        raise UserInputError(
-            f"MCP server not found. Install it first:\n\n"
-            f"  r7-cli vm export mcp install\n\n"
-            f"Or manually: pip install {_MCP_PACKAGE}"
+        click.echo("MCP server is not installed. Installing now…", err=True)
+        cmd = [sys.executable, "-m", "pip", "install", _MCP_PACKAGE]
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            if result.returncode != 0:
+                click.echo(f"Installation failed:\n{result.stderr}", err=True)
+                sys.exit(2)
+            click.echo("✓ MCP server installed.", err=True)
+        except subprocess.TimeoutExpired:
+            click.echo("Installation timed out.", err=True)
+            sys.exit(2)
+        server_cmd = _find_mcp_server()
+        if not server_cmd:
+            click.echo(
+                "rapid7-mcp-server not found on PATH after install. "
+                "You may need to restart your shell.",
+                err=True,
+            )
+            sys.exit(2)
+
+    # Auto-configure API key into the Kiro MCP config
+    if config.api_key:
+        _auto_configure_api_key(config)
+    else:
+        click.echo(
+            "Warning: No API key set. The server may not be able to authenticate.\n"
+            "  Set via: -k <key>, or R7_X_API_KEY env var.",
+            err=True,
         )
 
     # Check if already running
@@ -877,32 +936,124 @@ def mcp_status(ctx, export_id):
 # ---------------------------------------------------------------------------
 
 @mcp_group.command("download")
-@click.option("-j", "--id", "export_id", required=True, help="Export ID to download.")
-@click.option("--type", "export_type", type=click.Choice(_VALID_EXPORT_TYPES),
-              default="vulnerability", help="Export type (default: vulnerability).")
+@click.option("--type", "export_type", type=click.Choice(("vulnerability", "policy", "remediation", "asset")),
+              default=None, help="Download only this export type. Default: download all available.")
+@click.option("--output-dir", type=click.Path(), default=None, help="Directory to save files (default: current dir).")
 @click.pass_context
-def mcp_download(ctx, export_id, export_type):
-    """Download a completed export and load into the local DuckDB database.
+def mcp_download(ctx, export_type, output_dir):
+    """Download available bulk exports and load into the MCP DuckDB database.
 
     \b
-    Call this after `mcp status` confirms the export is COMPLETE.
-    Downloads Parquet files and loads them into the local DuckDB for querying.
+    By default, downloads ALL available export types (vulnerabilities,
+    policies, assets, remediations). Use --type to limit to a single type.
+
+    \b
+    This is the equivalent of `r7-cli vm export vulnerabilities --auto` but
+    routed through the MCP server for DuckDB loading.
 
     \b
     Examples:
-      r7-cli vm export mcp download --id <EXPORT_ID>
-      r7-cli vm export mcp download --id <EXPORT_ID> --type policy
+      # Download everything available
+      r7-cli vm export mcp download
+
+    \b
+      # Download only vulnerabilities
+      r7-cli vm export mcp download --type vulnerability
+
+    \b
+      # Download only policies to a specific directory
+      r7-cli vm export mcp download --type policy --output-dir ./exports
     """
     config = _get_config(ctx)
-    try:
-        result = _call_tool(config, "download_rapid7_export", {
-            "export_id": export_id,
-            "export_type": export_type,
-        })
-        click.echo(result)
-    except R7Error as exc:
-        click.echo(str(exc), err=True)
-        sys.exit(exc.exit_code)
+
+    # Determine which types to download
+    if export_type:
+        types_to_download = [export_type]
+    else:
+        types_to_download = ["vulnerability", "policy", "asset"]
+        # Remediation requires date range — include it with a sensible default
+        types_to_download.append("remediation")
+
+    click.echo(f"Downloading all available exports: {', '.join(types_to_download)}", err=True)
+    if output_dir:
+        click.echo(f"Output directory: {output_dir}", err=True)
+
+    results: list[tuple[str, str]] = []  # (type, status)
+
+    for etype in types_to_download:
+        click.echo(f"\n{'─' * 40}", err=True)
+        click.echo(f"▶ Starting {etype} export…", err=True)
+
+        try:
+            # Start the export
+            arguments: dict[str, Any] = {"export_type": etype}
+            start_result = _call_tool(config, "start_rapid7_export", arguments)
+            click.echo(f"  {start_result.splitlines()[0] if start_result else 'Export started'}", err=True)
+
+            # Extract export ID from the response
+            export_id = _extract_export_id_from_text(start_result)
+            if not export_id:
+                click.echo(f"  Could not extract export ID. Raw response:", err=True)
+                click.echo(f"  {start_result}", err=True)
+                results.append((etype, "FAILED (no ID)"))
+                continue
+
+            # Poll until complete
+            click.echo(f"  Export ID: {export_id} — polling for completion…", err=True)
+            poll_timeout = time.monotonic() + 600  # 10 minute max
+            while time.monotonic() < poll_timeout:
+                status_result = _call_tool(config, "check_rapid7_export_status", {"export_id": export_id})
+                if "COMPLETE" in status_result.upper() or "SUCCEEDED" in status_result.upper():
+                    click.echo(f"  ✓ Export complete.", err=True)
+                    break
+                elif "FAILED" in status_result.upper() or "ERROR" in status_result.upper():
+                    click.echo(f"  ✗ Export failed: {status_result.splitlines()[0]}", err=True)
+                    results.append((etype, "FAILED"))
+                    break
+                else:
+                    _log_verbose(config, f"  Status: {status_result.splitlines()[0] if status_result else 'unknown'}")
+                    time.sleep(10)
+            else:
+                click.echo(f"  ✗ Timed out waiting for {etype} export (10 min).", err=True)
+                results.append((etype, "TIMEOUT"))
+                continue
+
+            # Download the completed export
+            if results and results[-1][0] == etype:
+                continue  # Already recorded a failure
+
+            dl_args: dict[str, Any] = {"export_id": export_id, "export_type": etype}
+            dl_result = _call_tool(config, "download_rapid7_export", dl_args)
+            click.echo(f"  ✓ Downloaded: {dl_result.splitlines()[0] if dl_result else 'done'}", err=True)
+            results.append((etype, "OK"))
+
+        except R7Error as exc:
+            click.echo(f"  ✗ Error: {exc}", err=True)
+            results.append((etype, f"ERROR: {exc}"))
+
+    # Summary
+    click.echo(f"\n{'─' * 40}", err=True)
+    click.echo("Download summary:", err=True)
+    for etype, status in results:
+        icon = "✓" if status == "OK" else "✗"
+        click.echo(f"  {icon} {etype}: {status}", err=True)
+
+
+def _extract_export_id_from_text(text: str) -> str | None:
+    """Try to extract an export/job ID from MCP tool response text.
+
+    Looks for common patterns: UUIDs, or key-value pairs like 'id: xxx'.
+    """
+    import re
+    # Try UUID pattern first
+    uuid_match = re.search(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", text, re.IGNORECASE)
+    if uuid_match:
+        return uuid_match.group(0)
+    # Try "id": "xxx" or id: xxx patterns
+    id_match = re.search(r'["\']?(?:export_?)?id["\']?\s*[:=]\s*["\']?([a-zA-Z0-9_-]+)', text, re.IGNORECASE)
+    if id_match:
+        return id_match.group(1)
+    return None
 
 
 # ---------------------------------------------------------------------------
