@@ -2,6 +2,9 @@
 
 The Rapid7 Command Platform at your finger tips. Easily query, update, and manage Rapid7 solutions in a single tool.
 
+
+![r7-cli](docs/cmd.png)
+
 ```bash
 $ r7-cli platform matrix
 Display the licensed Rapid7 products that you're authorized for, not authorized for, and the ones that are not applicable.
