@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import shutil
 import subprocess
 import sys
@@ -33,6 +34,14 @@ _VALID_EXPORT_TYPES = ("vulnerability", "policy", "remediation")
 # Kiro MCP config path (workspace-level)
 _KIRO_MCP_CONFIG = Path(".kiro/settings/mcp.json")
 
+# PID file for persistent server mode
+_MCP_PID_DIR = Path.home() / ".r7-cli"
+_MCP_PID_FILE = _MCP_PID_DIR / "mcp-server.pid"
+_MCP_LOG_FILE = _MCP_PID_DIR / "mcp-server.log"
+
+# Default timeout for reading MCP responses (seconds)
+_MCP_READ_TIMEOUT = 30
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -40,6 +49,18 @@ _KIRO_MCP_CONFIG = Path(".kiro/settings/mcp.json")
 
 def _get_config(ctx: click.Context) -> Config:
     return ctx.obj["config"]
+
+
+def _log_verbose(config: Config, msg: str) -> None:
+    """Print a message to stderr when verbose mode is enabled."""
+    if config.verbose or config.debug:
+        click.echo(f"[mcp] {msg}", err=True)
+
+
+def _log_debug(config: Config, msg: str) -> None:
+    """Print a message to stderr when debug mode is enabled."""
+    if config.debug:
+        click.echo(f"[mcp:debug] {msg}", err=True)
 
 
 def _find_mcp_server() -> str | None:
@@ -61,10 +82,17 @@ def _run_mcp_stdio(config: Config, request: dict) -> dict:
             f"Or manually: pip install {_MCP_PACKAGE}"
         )
 
+    _log_verbose(config, f"Starting MCP server: {server_cmd}")
+
     env = dict(os.environ)
     if config.api_key:
         env["RAPID7_API_KEY"] = config.api_key
     env["RAPID7_REGION"] = config.region
+
+    _log_debug(config, f"Region: {config.region}")
+    _log_debug(config, f"API key: {'set (' + config.api_key[:4] + '…)' if config.api_key else 'NOT SET'}")
+
+    timeout = config.timeout or _MCP_READ_TIMEOUT
 
     proc = subprocess.Popen(
         [server_cmd],
@@ -75,8 +103,11 @@ def _run_mcp_stdio(config: Config, request: dict) -> dict:
         text=True,
     )
 
+    _log_verbose(config, f"Server process started (PID {proc.pid})")
+
     try:
         # MCP initialization handshake
+        _log_verbose(config, "Sending initialize request…")
         init_request = {
             "jsonrpc": "2.0",
             "id": 1,
@@ -87,54 +118,118 @@ def _run_mcp_stdio(config: Config, request: dict) -> dict:
                 "clientInfo": {"name": "r7-cli", "version": "0.1.0"},
             },
         }
-        _send_message(proc, init_request)
-        _read_response(proc)  # init response
+        _send_message(proc, init_request, config)
+        init_response = _read_response(proc, config, timeout=timeout)
+        _log_debug(config, f"Init response: {json.dumps(init_response, indent=2)}")
+        _log_verbose(config, "Server initialized ✓")
 
         # Send initialized notification
         initialized_notif = {
             "jsonrpc": "2.0",
             "method": "notifications/initialized",
         }
-        _send_message(proc, initialized_notif)
+        _send_message(proc, initialized_notif, config)
+        _log_debug(config, "Sent initialized notification")
 
         # Send the actual tool call
+        tool_name = request.get("params", {}).get("name", "unknown")
+        _log_verbose(config, f"Calling tool: {tool_name}")
+        _log_debug(config, f"Tool arguments: {json.dumps(request.get('params', {}).get('arguments', {}))}")
+
         tool_request = {
             "jsonrpc": "2.0",
             "id": 2,
             **request,
         }
-        _send_message(proc, tool_request)
-        result = _read_response(proc)
+        _send_message(proc, tool_request, config)
+        result = _read_response(proc, config, timeout=timeout)
+        _log_verbose(config, f"Tool response received ✓")
+        _log_debug(config, f"Response: {json.dumps(result, indent=2)}")
+
+        # Capture and log any stderr from the server
+        _drain_stderr(proc, config)
 
         return result
 
+    except TimeoutError:
+        _drain_stderr(proc, config)
+        raise R7Error(
+            f"MCP server did not respond within {timeout}s. "
+            f"Use --timeout to increase, or check server logs with: "
+            f"r7-cli vm export mcp server status",
+            exit_code=2,
+        )
     finally:
         proc.stdin.close()
         proc.terminate()
         try:
             proc.wait(timeout=5)
+            _log_debug(config, "Server process terminated cleanly")
         except subprocess.TimeoutExpired:
             proc.kill()
+            _log_debug(config, "Server process killed (did not terminate in 5s)")
 
 
-def _send_message(proc: subprocess.Popen, message: dict) -> None:
+def _drain_stderr(proc: subprocess.Popen, config: Config) -> None:
+    """Read any available stderr from the process and log it."""
+    try:
+        # Non-blocking read of stderr
+        import select
+        if hasattr(select, "select") and proc.stderr:
+            ready, _, _ = select.select([proc.stderr], [], [], 0.1)
+            if ready:
+                stderr_output = proc.stderr.read()
+                if stderr_output and stderr_output.strip():
+                    _log_debug(config, f"Server stderr: {stderr_output.strip()}")
+    except (OSError, ValueError):
+        pass
+
+
+def _send_message(proc: subprocess.Popen, message: dict, config: Config) -> None:
     """Send a JSON-RPC message using the MCP stdio transport format."""
     body = json.dumps(message)
     header = f"Content-Length: {len(body.encode())}\r\n\r\n"
+    _log_debug(config, f"→ Sending {len(body.encode())} bytes: method={message.get('method', 'N/A')}")
     proc.stdin.write(header + body)
     proc.stdin.flush()
 
 
-def _read_response(proc: subprocess.Popen) -> dict:
-    """Read a JSON-RPC response from the MCP server's stdout."""
+def _read_response(proc: subprocess.Popen, config: Config, timeout: int = _MCP_READ_TIMEOUT) -> dict:
+    """Read a JSON-RPC response from the MCP server's stdout.
+
+    Raises TimeoutError if no response is received within the timeout period.
+    """
+    import select
+
+    deadline = time.monotonic() + timeout
+    _log_debug(config, f"← Waiting for response (timeout: {timeout}s)…")
+
     # Read Content-Length header
     header_line = ""
     while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError(f"Timed out waiting for MCP response header after {timeout}s")
+
+        # Use select for timeout on reads (Unix)
+        if hasattr(select, "select"):
+            ready, _, _ = select.select([proc.stdout], [], [], min(remaining, 1.0))
+            if not ready:
+                # Check if process is still alive
+                if proc.poll() is not None:
+                    stderr_output = proc.stderr.read() if proc.stderr else ""
+                    raise R7Error(
+                        f"MCP server exited unexpectedly (code {proc.returncode}). "
+                        f"stderr: {stderr_output.strip() or '(empty)'}",
+                        exit_code=2,
+                    )
+                continue
+
         ch = proc.stdout.read(1)
         if ch == "":
-            stderr_output = proc.stderr.read()
+            stderr_output = proc.stderr.read() if proc.stderr else ""
             raise R7Error(
-                f"MCP server closed unexpectedly. stderr: {stderr_output}",
+                f"MCP server closed unexpectedly. stderr: {stderr_output.strip() or '(empty)'}",
                 exit_code=2,
             )
         header_line += ch
@@ -151,8 +246,32 @@ def _read_response(proc: subprocess.Popen) -> dict:
     if content_length == 0:
         raise R7Error("Invalid MCP response: missing Content-Length", exit_code=2)
 
-    # Read body
-    body = proc.stdout.read(content_length)
+    _log_debug(config, f"← Reading {content_length} bytes…")
+
+    # Read body with timeout
+    body = ""
+    while len(body.encode()) < content_length:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError(f"Timed out reading MCP response body after {timeout}s")
+
+        if hasattr(select, "select"):
+            ready, _, _ = select.select([proc.stdout], [], [], min(remaining, 1.0))
+            if not ready:
+                if proc.poll() is not None:
+                    stderr_output = proc.stderr.read() if proc.stderr else ""
+                    raise R7Error(
+                        f"MCP server exited while sending response (code {proc.returncode}). "
+                        f"stderr: {stderr_output.strip() or '(empty)'}",
+                        exit_code=2,
+                    )
+                continue
+
+        chunk = proc.stdout.read(content_length - len(body.encode()))
+        if chunk == "":
+            raise R7Error("MCP server closed while sending response body", exit_code=2)
+        body += chunk
+
     return json.loads(body)
 
 
@@ -184,6 +303,44 @@ def _call_tool(config: Config, tool_name: str, arguments: dict | None = None) ->
 
 
 # ---------------------------------------------------------------------------
+# Server lifecycle helpers
+# ---------------------------------------------------------------------------
+
+def _read_pid_file() -> int | None:
+    """Read the PID from the MCP server PID file, or None if not present."""
+    if not _MCP_PID_FILE.exists():
+        return None
+    try:
+        pid = int(_MCP_PID_FILE.read_text().strip())
+        return pid
+    except (ValueError, OSError):
+        return None
+
+
+def _is_process_running(pid: int) -> bool:
+    """Check if a process with the given PID is running."""
+    try:
+        os.kill(pid, 0)
+        return True
+    except (OSError, ProcessLookupError):
+        return False
+
+
+def _write_pid_file(pid: int) -> None:
+    """Write the server PID to the PID file."""
+    _MCP_PID_DIR.mkdir(parents=True, exist_ok=True)
+    _MCP_PID_FILE.write_text(str(pid))
+
+
+def _remove_pid_file() -> None:
+    """Remove the PID file."""
+    try:
+        _MCP_PID_FILE.unlink()
+    except FileNotFoundError:
+        pass
+
+
+# ---------------------------------------------------------------------------
 # Click group: vm export mcp
 # ---------------------------------------------------------------------------
 
@@ -205,8 +362,307 @@ def mcp_group(ctx):
       r7-cli vm export mcp status --id X  # Check export progress
       r7-cli vm export mcp download --id X  # Download & load into DuckDB
       r7-cli vm export mcp query "SELECT severity, COUNT(*) FROM vulnerabilities GROUP BY severity"
+
+    \b
+    Server management:
+      r7-cli vm export mcp server start   # Start persistent MCP server
+      r7-cli vm export mcp server stop    # Stop the server
+      r7-cli vm export mcp server status  # Check if server is running
+
+    \b
+    Debugging:
+      r7-cli -v vm export mcp query ...   # Verbose: show request/response flow
+      r7-cli --debug vm export mcp query ...  # Debug: full JSON payloads
     """
     pass
+
+
+# ---------------------------------------------------------------------------
+# mcp server (subgroup for lifecycle management)
+# ---------------------------------------------------------------------------
+
+@mcp_group.group("server", cls=GlobalFlagHintGroup)
+@click.pass_context
+def mcp_server_group(ctx):
+    """Manage the MCP server process (start, stop, status).
+
+    \b
+    By default, each `mcp` command starts a fresh server subprocess,
+    runs the request, and shuts it down. For repeated queries, you can
+    start a persistent server that stays running in the background.
+
+    \b
+    Examples:
+      r7-cli vm export mcp server start
+      r7-cli vm export mcp server status
+      r7-cli vm export mcp server stop
+    """
+    pass
+
+
+@mcp_server_group.command("start")
+@click.pass_context
+def mcp_server_start(ctx):
+    """Start the MCP server as a persistent background process.
+
+    \b
+    The server runs in the background and logs to ~/.r7-cli/mcp-server.log.
+    Use `server status` to check if it's running, and `server stop` to shut it down.
+
+    \b
+    Examples:
+      r7-cli vm export mcp server start
+      r7-cli -v vm export mcp server start
+    """
+    config = _get_config(ctx)
+
+    server_cmd = _find_mcp_server()
+    if not server_cmd:
+        raise UserInputError(
+            f"MCP server not found. Install it first:\n\n"
+            f"  r7-cli vm export mcp install\n\n"
+            f"Or manually: pip install {_MCP_PACKAGE}"
+        )
+
+    # Check if already running
+    existing_pid = _read_pid_file()
+    if existing_pid and _is_process_running(existing_pid):
+        click.echo(f"MCP server is already running (PID {existing_pid}).")
+        click.echo(f"  Log: {_MCP_LOG_FILE}")
+        return
+
+    # Build environment
+    env = dict(os.environ)
+    if config.api_key:
+        env["RAPID7_API_KEY"] = config.api_key
+    env["RAPID7_REGION"] = config.region
+
+    _log_verbose(config, f"Starting persistent server: {server_cmd}")
+    _log_debug(config, f"Region: {config.region}")
+    _log_debug(config, f"Log file: {_MCP_LOG_FILE}")
+
+    # Start the server in the background
+    _MCP_PID_DIR.mkdir(parents=True, exist_ok=True)
+    log_file = open(_MCP_LOG_FILE, "a")
+
+    proc = subprocess.Popen(
+        [server_cmd],
+        stdin=subprocess.PIPE,
+        stdout=log_file,
+        stderr=log_file,
+        env=env,
+        start_new_session=True,  # Detach from terminal
+    )
+
+    # Give it a moment to start (or crash)
+    time.sleep(1)
+    if proc.poll() is not None:
+        log_file.close()
+        # Server exited immediately — read the log for clues
+        recent_log = ""
+        try:
+            recent_log = _MCP_LOG_FILE.read_text()[-500:]
+        except OSError:
+            pass
+        click.echo(f"MCP server failed to start (exit code {proc.returncode}).", err=True)
+        if recent_log:
+            click.echo(f"Recent log output:\n{recent_log}", err=True)
+        sys.exit(2)
+
+    _write_pid_file(proc.pid)
+    log_file.close()
+
+    click.echo(f"✓ MCP server started (PID {proc.pid})")
+    click.echo(f"  Log: {_MCP_LOG_FILE}")
+    click.echo(f"  Stop: r7-cli vm export mcp server stop")
+
+
+@mcp_server_group.command("stop")
+@click.pass_context
+def mcp_server_stop(ctx):
+    """Stop the persistent MCP server process.
+
+    \b
+    Sends SIGTERM to the server process. If it doesn't stop within 5 seconds,
+    sends SIGKILL.
+
+    \b
+    Examples:
+      r7-cli vm export mcp server stop
+    """
+    config = _get_config(ctx)
+
+    pid = _read_pid_file()
+    if pid is None:
+        click.echo("No MCP server PID file found. Server may not be running.")
+        _remove_pid_file()
+        return
+
+    if not _is_process_running(pid):
+        click.echo(f"MCP server (PID {pid}) is not running. Cleaning up PID file.")
+        _remove_pid_file()
+        return
+
+    _log_verbose(config, f"Stopping MCP server (PID {pid})…")
+
+    try:
+        os.kill(pid, signal.SIGTERM)
+        # Wait for graceful shutdown
+        for _ in range(50):  # 5 seconds in 100ms increments
+            if not _is_process_running(pid):
+                break
+            time.sleep(0.1)
+        else:
+            # Force kill if still running
+            _log_verbose(config, "Server did not stop gracefully, sending SIGKILL")
+            os.kill(pid, signal.SIGKILL)
+            time.sleep(0.5)
+    except ProcessLookupError:
+        pass
+
+    _remove_pid_file()
+    click.echo(f"✓ MCP server stopped (was PID {pid})")
+
+
+@mcp_server_group.command("status")
+@click.pass_context
+def mcp_server_status(ctx):
+    """Check if the MCP server is running.
+
+    \b
+    Shows the server PID, whether it's responsive, and the log file location.
+
+    \b
+    Examples:
+      r7-cli vm export mcp server status
+    """
+    config = _get_config(ctx)
+
+    # Check binary availability
+    server_cmd = _find_mcp_server()
+    if not server_cmd:
+        click.echo("MCP server binary: NOT INSTALLED")
+        click.echo(f"  Install with: r7-cli vm export mcp install")
+        return
+
+    click.echo(f"MCP server binary: {server_cmd}")
+
+    # Check persistent server
+    pid = _read_pid_file()
+    if pid is None:
+        click.echo("Persistent server: not started")
+    elif _is_process_running(pid):
+        click.echo(f"Persistent server: RUNNING (PID {pid})")
+    else:
+        click.echo(f"Persistent server: DEAD (stale PID {pid})")
+        _remove_pid_file()
+
+    # Show log file info
+    if _MCP_LOG_FILE.exists():
+        size = _MCP_LOG_FILE.stat().st_size
+        click.echo(f"Log file: {_MCP_LOG_FILE} ({size} bytes)")
+        # Show last few lines
+        try:
+            lines = _MCP_LOG_FILE.read_text().strip().split("\n")
+            tail = lines[-5:] if len(lines) > 5 else lines
+            if tail and tail[0]:
+                click.echo("  Last log lines:")
+                for line in tail:
+                    click.echo(f"    {line}")
+        except OSError:
+            pass
+    else:
+        click.echo(f"Log file: {_MCP_LOG_FILE} (not created yet)")
+
+    # Quick connectivity test (start a server, send init, shut down)
+    click.echo("")
+    click.echo("Testing server connectivity…")
+    try:
+        env = dict(os.environ)
+        if config.api_key:
+            env["RAPID7_API_KEY"] = config.api_key
+        env["RAPID7_REGION"] = config.region
+
+        proc = subprocess.Popen(
+            [server_cmd],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=env,
+            text=True,
+        )
+        init_request = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "r7-cli", "version": "0.1.0"},
+            },
+        }
+        _send_message(proc, init_request, config)
+        response = _read_response(proc, config, timeout=10)
+        proc.stdin.close()
+        proc.terminate()
+        proc.wait(timeout=5)
+
+        server_info = response.get("result", {}).get("serverInfo", {})
+        server_name = server_info.get("name", "unknown")
+        server_version = server_info.get("version", "unknown")
+        click.echo(f"  ✓ Server responds: {server_name} v{server_version}")
+    except TimeoutError:
+        click.echo("  ✗ Server did not respond within 10s (may be hanging on startup)")
+        click.echo("    Check that RAPID7_API_KEY is set and valid")
+    except R7Error as exc:
+        click.echo(f"  ✗ Server error: {exc}")
+    except Exception as exc:
+        click.echo(f"  ✗ Could not connect: {exc}")
+    finally:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+
+
+@mcp_server_group.command("logs")
+@click.option("-n", "--lines", type=int, default=20, help="Number of lines to show (default: 20).")
+@click.option("-f", "--follow", is_flag=True, help="Follow log output (like tail -f). Press Ctrl+C to stop.")
+@click.pass_context
+def mcp_server_logs(ctx, lines, follow):
+    """Show MCP server log output.
+
+    \b
+    Examples:
+      r7-cli vm export mcp server logs
+      r7-cli vm export mcp server logs -n 50
+      r7-cli vm export mcp server logs -f
+    """
+    if not _MCP_LOG_FILE.exists():
+        click.echo(f"No log file found at {_MCP_LOG_FILE}")
+        click.echo("Start the server first: r7-cli vm export mcp server start")
+        return
+
+    if follow:
+        click.echo(f"Following {_MCP_LOG_FILE} (Ctrl+C to stop)…", err=True)
+        try:
+            with open(_MCP_LOG_FILE) as f:
+                # Seek to end
+                f.seek(0, 2)
+                while True:
+                    line = f.readline()
+                    if line:
+                        click.echo(line, nl=False)
+                    else:
+                        time.sleep(0.2)
+        except KeyboardInterrupt:
+            pass
+    else:
+        content = _MCP_LOG_FILE.read_text()
+        all_lines = content.strip().split("\n")
+        tail = all_lines[-lines:] if len(all_lines) > lines else all_lines
+        for line in tail:
+            click.echo(line)
 
 
 # ---------------------------------------------------------------------------
