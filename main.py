@@ -285,20 +285,44 @@ cli.help = (
 @click.command("validate")
 @click.pass_context
 def _validate_cmd(ctx):
-    """Validate API key against the Insight Platform."""
+    """Validate API key (and DRP token if provided) against the Insight Platform."""
     from r7cli.client import R7Client
-    from r7cli.models import INSIGHT_BASE
+    from r7cli.models import INSIGHT_BASE, DRP_BASE, APIError
     from r7cli.output import format_output
 
     config = ctx.obj["config"]
     client = R7Client(config)
-    url = INSIGHT_BASE.format(region=config.region) + "/validate"
-    try:
-        result = client.get(url, solution="platform", subcommand="validate")
-        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
-    except R7Error as exc:
-        click.echo(str(exc), err=True)
-        sys.exit(exc.exit_code)
+
+    # --- Validate API key ---
+    if config.api_key:
+        url = INSIGHT_BASE.format(region=config.region) + "/validate"
+        try:
+            result = client.get(url, solution="platform", subcommand="validate")
+            click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
+        except R7Error as exc:
+            click.echo(str(exc), err=True)
+            sys.exit(exc.exit_code)
+    else:
+        click.echo("No API key provided — skipping platform validation.", err=True)
+
+    # --- Validate DRP token if provided ---
+    if config.drp_token:
+        token = config.drp_token
+        if ":" in token:
+            parts = token.split(":", 1)
+            auth = (parts[0], parts[1])
+        else:
+            auth = (token, "")
+        drp_url = f"{DRP_BASE}/public/v1/test-credentials"
+        try:
+            client.head(drp_url, auth=auth, solution="drp", subcommand="validate")
+            click.echo("DRP credentials valid")
+        except APIError as exc:
+            if exc.status_code == 401:
+                click.echo("DRP credentials invalid", err=True)
+                sys.exit(1)
+            click.echo(str(exc), err=True)
+            sys.exit(exc.exit_code)
 
 
 # ---------------------------------------------------------------------------
