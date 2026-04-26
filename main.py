@@ -190,9 +190,9 @@ _TLDR = f"""{_BANNER}
   {_C}r7-cli siem investigations list --status OPEN --all-pages{_R}  {_G}# List all open investigations{_R}
 
 {_H}Surface Command / ASM{_R}
-  {_C}r7-cli asm queries list{_R}
-  {_C}r7-cli asm queries execute --query 'MATCH (a:Asset) RETURN a LIMIT 10'{_R}
-  {_C}r7-cli asm connectors list{_R}
+  {_C}r7-cli asm queries list{_R}                            {_G}# List available queries{_R}
+  {_C}r7-cli asm queries execute --query 'MATCH (a:Asset) RETURN a LIMIT 10'{_R}  {_G}# Execute an OpenCypher query{_R}
+  {_C}r7-cli asm connectors list{_R}                         {_G}# List installed connectors{_R}
 
 {_H}Digital Risk Protection{_R}
   {_C}r7-cli drp validate{_R}                                {_G}# Validate DRP specific API key{_R}
