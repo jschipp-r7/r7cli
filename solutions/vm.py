@@ -1341,6 +1341,10 @@ def export(ctx):
     pass
 
 
+from r7cli.solutions.mcp import mcp_group as _mcp_group  # noqa: E402
+export.add_command(_mcp_group)
+
+
 @export.command("vulnerabilities")
 @click.option("-w", "--wait", is_flag=True, help="Poll until export completes.")
 @click.option("-a", "--auto", is_flag=True, help="Wait and auto-download Parquet files.")

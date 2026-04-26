@@ -3,6 +3,7 @@ Name: r7-cli
 Version: 0.1.0
 Summary: Rapid7 Insight Platform CLI
 Requires-Python: >=3.10
+License-File: LICENSE
 Requires-Dist: click>=8.0
 Requires-Dist: httpx>=0.24
 Requires-Dist: tabulate>=0.9
@@ -11,3 +12,4 @@ Requires-Dist: questionary>=2.0
 Provides-Extra: dev
 Requires-Dist: pytest>=7.0; extra == "dev"
 Requires-Dist: hypothesis>=6.0; extra == "dev"
+Dynamic: license-file
