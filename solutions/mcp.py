@@ -1121,15 +1121,38 @@ def _kill_stale_mcp_processes(config: Config, yes: bool = False) -> None:
     """Find and kill orphaned rapid7-mcp-server processes."""
     import signal as _signal
 
+    pids: list[int] = []
     try:
-        # Use pgrep to find rapid7-mcp-server processes (excludes current process)
+        # Use pgrep -f to match the full command line (catches Python script wrappers)
         result = subprocess.run(
             ["pgrep", "-f", _MCP_SERVER_CMD],
             capture_output=True, text=True,
         )
         pids = [int(p) for p in result.stdout.strip().split("\n") if p.strip()]
     except (subprocess.SubprocessError, ValueError):
-        pids = []
+        pass
+
+    # Fallback: search via ps for processes whose command line contains the server name.
+    # This catches cases where pgrep -f truncates or misses the match on macOS.
+    if not pids:
+        try:
+            result = subprocess.run(
+                ["ps", "aux"],
+                capture_output=True, text=True,
+            )
+            for line in result.stdout.splitlines():
+                if _MCP_SERVER_CMD in line and "pgrep" not in line and "ps aux" not in line:
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        try:
+                            pid = int(parts[1])
+                            # Don't include our own process
+                            if pid != os.getpid():
+                                pids.append(pid)
+                        except ValueError:
+                            continue
+        except subprocess.SubprocessError:
+            pass
 
     if not pids:
         click.echo("No stale rapid7-mcp-server processes found.")
