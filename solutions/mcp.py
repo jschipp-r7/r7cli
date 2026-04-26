@@ -1141,12 +1141,10 @@ def _kill_stale_mcp_processes(config: Config, yes: bool = False) -> None:
 @mcp_group.command("clean")
 @click.option("--all", "remove_all", is_flag=True, default=False,
               help="Also remove MCP configuration files.")
-@click.option("--kill-stale", is_flag=True, default=False,
-              help="Kill orphaned rapid7-mcp-server processes.")
 @click.option("-y", "--yes", is_flag=True, default=False,
               help="Skip confirmation prompt.")
 @click.pass_context
-def mcp_clean(ctx, remove_all, kill_stale, yes):
+def mcp_clean(ctx, remove_all, yes):
     """Remove downloaded MCP data files and optionally configuration.
 
     \b
@@ -1155,21 +1153,17 @@ def mcp_clean(ctx, remove_all, kill_stale, yes):
       - Downloaded Parquet files (imports/, downloads/)
 
     \b
+    Also kills any orphaned rapid7-mcp-server processes that may be
+    holding DuckDB locks.
+
+    \b
     With --all, also removes the MCP server configuration from
     .kiro/settings/mcp.json (the "rapid7-bulk-export" entry).
 
     \b
-    With --kill-stale, finds and terminates any orphaned rapid7-mcp-server
-    processes that may be holding DuckDB locks.
-
-    \b
     Examples:
-      # Remove downloaded data
+      # Remove downloaded data and kill stale processes
       r7-cli vm export mcp clean
-
-    \b
-      # Kill stale server processes
-      r7-cli vm export mcp clean --kill-stale
 
     \b
       # Remove data + configuration (no prompt)
@@ -1177,11 +1171,8 @@ def mcp_clean(ctx, remove_all, kill_stale, yes):
     """
     config = _get_config(ctx)
 
-    # --- Kill stale processes ---
-    if kill_stale:
-        _kill_stale_mcp_processes(config, yes=yes)
-        if not remove_all and not _MCP_DATA_DIR.exists():
-            return
+    # --- Always kill stale processes ---
+    _kill_stale_mcp_processes(config, yes=yes)
 
     # Gather what will be removed
     targets = []
