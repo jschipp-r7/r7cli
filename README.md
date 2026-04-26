@@ -276,16 +276,17 @@ Executes Cypher queries against the Surface Command graph API and manages connec
 
 | Command | Method | API Endpoint | Description |
 |---------|--------|-------------|-------------|
-| `asm list` | POST | `/surface/graph-api/objects/table` | List saved Cypher queries |
-| `asm execute` | POST | `/surface/graph-api/objects/table` | Execute a Cypher query |
+| `asm queries list` | POST | `/surface/graph-api/objects/table` | List saved Cypher queries |
+| `asm queries execute` | POST | `/surface/graph-api/objects/table` | Execute a Cypher query |
+| `asm queries get` | POST | `/surface/graph-api/objects/table` | Get a saved query by ID |
 | `asm connectors list` | POST | `/surface/graph-api/objects/table` | List connectors |
 
 Base URL: `https://{region}.api.insight.rapid7.com/surface`
 
 ```bash
-r7-cli asm list
-r7-cli asm execute --query 'MATCH (a:Asset) RETURN a LIMIT 10'
-r7-cli asm execute --query-file my-query.cypher
+r7-cli asm queries list
+r7-cli asm queries execute --query 'MATCH (a:Asset) RETURN a LIMIT 10'
+r7-cli asm queries execute --query-file my-query.cypher
 r7-cli asm connectors list
 ```
 

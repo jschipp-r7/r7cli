@@ -190,8 +190,8 @@ _TLDR = f"""{_BANNER}
   {_C}r7-cli siem investigations list --status OPEN --all-pages{_R}  {_G}# List all open investigations{_R}
 
 {_H}Surface Command / ASM{_R}
-  {_C}r7-cli asm list{_R}
-  {_C}r7-cli asm execute --query 'MATCH (a:Asset) RETURN a LIMIT 10'{_R}
+  {_C}r7-cli asm queries list{_R}
+  {_C}r7-cli asm queries execute --query 'MATCH (a:Asset) RETURN a LIMIT 10'{_R}
   {_C}r7-cli asm connectors list{_R}
 
 {_H}Digital Risk Protection{_R}
