@@ -761,36 +761,47 @@ def mcp_start(ctx, output_dir):
 
     click.echo(f"  Export ID: {export_id}", err=True)
 
-    # Step 2: Poll until complete
+    # Step 2: Poll until complete with progress bar
     click.echo("Waiting for export to complete…", err=True)
     poll_timeout = time.monotonic() + 600  # 10 minute max
     poll_count = 0
+    start_time = time.monotonic()
     try:
         while time.monotonic() < poll_timeout:
             status_result = _call_tool(config, "check_rapid7_export_status", {"export_id": export_id})
             status_upper = status_result.upper()
 
             if "COMPLETE" in status_upper or "SUCCEEDED" in status_upper:
+                # Final progress bar at 100%
+                _print_progress_bar(1.0, "complete", err=True)
+                click.echo("", err=True)  # newline after progress bar
                 click.echo("  ✓ Export complete.", err=True)
                 break
             elif "FAILED" in status_upper or "ERROR" in status_upper:
+                click.echo("", err=True)
                 click.echo(f"  ✗ Export failed: {status_result.splitlines()[0]}", err=True)
                 sys.exit(2)
             else:
                 poll_count += 1
-                status_line = status_result.splitlines()[0] if status_result else "in progress"
+                elapsed = time.monotonic() - start_time
+                # Estimate progress (exports typically take 3-5 min)
+                estimated_total = 300.0  # 5 min estimate
+                progress = min(elapsed / estimated_total, 0.95)  # cap at 95% until done
+                status_line = status_result.splitlines()[0] if status_result else "processing"
+                _print_progress_bar(progress, status_line, err=True)
+
                 if config.verbose or config.debug:
+                    click.echo("", err=True)
                     click.echo(f"  [{poll_count}] {status_line}", err=True)
-                elif poll_count % 3 == 1:
-                    # Print a progress dot every ~30s to show we're alive
-                    click.echo(f"  Still processing… ({status_line})", err=True)
                 time.sleep(10)
         else:
+            click.echo("", err=True)
             click.echo("  ✗ Timed out waiting for export (10 min).", err=True)
             click.echo(f"  Export ID: {export_id}", err=True)
             click.echo("  The export may still be running on the platform.", err=True)
             sys.exit(2)
     except R7Error as exc:
+        click.echo("", err=True)
         click.echo(f"  Error checking status: {exc}", err=True)
         sys.exit(exc.exit_code)
 
@@ -801,7 +812,8 @@ def mcp_start(ctx, output_dir):
             "export_id": export_id,
             "export_type": "vulnerability",
         })
-        click.echo(f"  ✓ {dl_result.splitlines()[0] if dl_result else 'Data loaded'}", err=True)
+        # Parse and display downloaded files
+        _display_download_results(dl_result)
     except R7Error as exc:
         click.echo(f"  ✗ Download failed: {exc}", err=True)
         sys.exit(exc.exit_code)
@@ -832,6 +844,65 @@ def mcp_start(ctx, output_dir):
     click.echo('    r7-cli vm export mcp query "SELECT severity, COUNT(*) as cnt FROM vulnerabilities GROUP BY severity ORDER BY cnt DESC"')
     click.echo('    r7-cli vm export mcp query "SELECT hostName, COUNT(*) as cnt FROM vulnerabilities GROUP BY hostName ORDER BY cnt DESC LIMIT 10"')
     click.echo('    r7-cli vm export mcp query "SELECT title FROM vulnerabilities WHERE severity=\'Critical\' LIMIT 5"')
+
+
+def _print_progress_bar(progress: float, label: str = "", width: int = 30, err: bool = True) -> None:
+    """Print an ANSI progress bar that overwrites the current line.
+
+    Args:
+        progress: Float between 0.0 and 1.0
+        label: Status text to show after the bar
+        width: Character width of the bar
+        err: Whether to write to stderr
+    """
+    filled = int(width * progress)
+    bar = "█" * filled + "░" * (width - filled)
+    pct = int(progress * 100)
+    # Truncate label to fit terminal
+    max_label = 30
+    if len(label) > max_label:
+        label = label[:max_label - 1] + "…"
+    line = f"\r  [{bar}] {pct:3d}% {label}"
+    if err:
+        click.echo(line, nl=False, err=True)
+    else:
+        click.echo(line, nl=False)
+
+
+def _display_download_results(dl_result: str) -> None:
+    """Parse the download result and display files as they complete."""
+    if not dl_result:
+        click.echo("  ✓ Data loaded.", err=True)
+        return
+
+    lines = dl_result.strip().splitlines()
+    file_lines = []
+    other_lines = []
+
+    for line in lines:
+        stripped = line.strip()
+        if (stripped.endswith(".parquet") or
+                ("/imports/" in stripped and "/" in stripped) or
+                ("/downloads/" in stripped and "/" in stripped)):
+            file_lines.append(stripped)
+        else:
+            other_lines.append(stripped)
+
+    if file_lines:
+        total = len(file_lines)
+        click.echo(f"  Downloading {total} file{'s' if total != 1 else ''}…", err=True)
+        for i, f in enumerate(file_lines, 1):
+            # Show progress bar for each file
+            progress = i / total
+            _print_progress_bar(progress, f"file {i}/{total}", err=True)
+            click.echo("", err=True)
+            # Extract just the filename for cleaner display
+            fname = f.rsplit("/", 1)[-1] if "/" in f else f
+            click.echo(f"    ✓ {fname}", err=True)
+        click.echo(f"  ✓ All {total} files downloaded and loaded.", err=True)
+    else:
+        # No file lines found — just show the first line of the result
+        click.echo(f"  ✓ {lines[0] if lines else 'Data loaded'}", err=True)
 
 
 def _extract_export_id_from_text(text: str) -> str | None:
