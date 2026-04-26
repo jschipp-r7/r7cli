@@ -6,29 +6,8 @@ The Rapid7 Command Platform at your finger tips. Easily query, update, and manag
 ![r7-cli](docs/cmd.png)
 
 Example
-```bash
-$ r7-cli platform matrix
-Display the licensed Rapid7 products that you're authorized for, not authorized for, and the ones that are not applicable.
-+---------------+----------+------------+-----------+----------+-----------+-----------+
-|               | GOVERN   | IDENTIFY   | PROTECT   | DETECT   | RESPOND   | RECOVER   |
-+===============+==========+============+===========+==========+===========+===========+
-| DEVICES       | 🚫       | ✅         | ✅        | ✅       | ✅        | N/A       |
-+---------------+----------+------------+-----------+----------+-----------+-----------+
-| SOFTWARE      | 🚫       | ✅         | ✅        | ✅       | ✅        | N/A       |
-+---------------+----------+------------+-----------+----------+-----------+-----------+
-| NETWORK       | 🚫       | ✅         | ✅        | ✅       | ✅        | N/A       |
-+---------------+----------+------------+-----------+----------+-----------+-----------+
-| USERS         | 🚫       | ✅         | ✅        | ✅       | ✅        | N/A       |
-+---------------+----------+------------+-----------+----------+-----------+-----------+
-| DATA          | 🚫       | 🚫         | ✅        | ✅       | ✅        | N/A       |
-+---------------+----------+------------+-----------+----------+-----------+-----------+
-| DOCUMENTATION | 🚫       | N/A        | 🚫        | 🚫       | ✅        | N/A       |
-+---------------+----------+------------+-----------+----------+-----------+-----------+
 
-Recommended products to improve your coverage:
-  + Cyber GRC             (+8 cells)
-  + DSPM                  (+1 cells)
-```
+![r7-cli](docs/matrix.png)
 
 ## Features
 
@@ -36,6 +15,7 @@ Recommended products to improve your coverage:
 * Compliance: Download raw Rapid7 data for compliance evidence for internal & external audits
 * Automation: Use in scripts for data enrichment and to check product health and platform status
 * Manage: Manage and provision many Rapid7 product settings in a repeatable way
+* APIs: Simplify learning and usage of Rapid7's APIs
 
 > Full API reference, command tables, and detailed usage: [docs/REFERENCE.md](docs/REFERENCE.md)
 
