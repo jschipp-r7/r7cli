@@ -72,6 +72,7 @@ Supported regions: `us`, `us1`, `us2`, `us3`, `ca`, `eu`, `au`, `ap`, `me-centra
 | `-t, --timeout` | Request timeout in seconds (default: 30) |
 | `--search-fields` | Search JSON response for a field name and print matching values |
 | `--drp-token` | DRP API token in `user:key` format |
+| `--tldr` | Show quick-reference examples |
 
 ## License Checking
 
@@ -138,10 +139,10 @@ Manages vulnerability scans, assets, engines, sites, vulnerabilities, and bulk e
 | `vm assets list` | POST | `/v4/integration/assets` | Search/list assets |
 | `vm assets count` | POST | `/v4/integration/assets` | Get total asset count |
 | `vm assets get` | GET | `/v4/integration/assets/{id}` | Get a single asset |
-| `vm engines list` | GET | `/v4/integration/scan/engine` | List scan engines |
-| `vm engines get` | GET | `/v4/integration/scan/engine/{id}` | Get a single engine |
-| `vm engines update-config` | POST | `/v4/integration/scan/engine/{id}/configuration` | Update engine config |
-| `vm engines remove-config` | DELETE | `/v4/integration/scan/engine/{id}/configuration` | Remove engine config |
+| `vm scan-engines list` | GET | `/v4/integration/scan/engine` | List scan engines |
+| `vm scan-engines get` | GET | `/v4/integration/scan/engine/{id}` | Get a single engine |
+| `vm scan-engines update-config` | POST | `/v4/integration/scan/engine/{id}/configuration` | Update engine config |
+| `vm scan-engines remove-config` | DELETE | `/v4/integration/scan/engine/{id}/configuration` | Remove engine config |
 | `vm sites list` | GET | `/v4/integration/sites` | List sites |
 | `vm vulns list` | POST | `/v4/integration/vulnerabilities` | Search vulnerabilities |
 | `vm export vulnerabilities` | POST | `/export/graphql` (GQL mutation) | Start vulnerability export |
@@ -149,7 +150,7 @@ Manages vulnerability scans, assets, engines, sites, vulnerabilities, and bulk e
 | `vm export remediations` | POST | `/export/graphql` (GQL mutation) | Start remediation export |
 | `vm export list` | — | Local filesystem | Filter downloaded Parquet files |
 | `vm export schema` | POST | `/export/graphql` (GQL query) | Inspect export schema |
-| `vm job status` | POST | `/export/graphql` (GQL query) | Poll export job status |
+| `vm export job status` | POST | `/export/graphql` (GQL query) | Poll export job status |
 
 Base URLs:
 - IVM v4: `https://{region}.api.insight.rapid7.com/vm/v4`
@@ -162,8 +163,8 @@ r7-cli vm scans list --status Success --all-pages
 r7-cli vm assets list --hostname 'webserver' --all-pages
 r7-cli vm assets list --risk-score '>=100000' --all-pages --force
 r7-cli vm assets count
-r7-cli vm engines list
-r7-cli vm engines list --unhealthy
+r7-cli vm scan-engines list
+r7-cli vm scan-engines list --unhealthy
 r7-cli vm sites list --all-pages
 r7-cli vm vulns list --severity Critical --all-pages
 r7-cli vm export vulnerabilities --auto
@@ -171,7 +172,7 @@ r7-cli vm export policies --auto
 r7-cli vm export remediations --month january --year 2026 --auto
 r7-cli vm export list --severity Critical --has-exploits true
 r7-cli vm export list --hostname '*.prod.*' --where 'cvssScore>=9.0'
-r7-cli vm job status --id <JOB_ID> --poll
+r7-cli vm export job status --id <JOB_ID> --poll
 ```
 
 ---
@@ -188,7 +189,8 @@ Manages health metrics, log queries, agents, investigations, detection rules, co
 | `siem logs logsets list` | GET | `/management/logsets` | List logsets |
 | `siem logs query` | GET | `/query/logsets`, `/query/logs/{id}` | Query logs by logset name |
 | `siem logs keys` | GET | `/query/logs/{id}/keys` | Get log keys |
-| `siem logs usage` | GET | `/usage/organizations` | Log storage usage |
+| `siem logs usage` | GET | `/query/logs/{id}/usage` | Get storage usage for a log |
+| `siem logs storage` | GET | `/usage/organizations` | Log storage usage over time |
 | `siem logs retention` | GET | `/management/organizations` | Log retention settings |
 | `siem logs mgmt list` | GET | `/management/logs` | List individual logs |
 | `siem logs mgmt get` | GET | `/management/logs/{id}` | Get a single log |
@@ -200,50 +202,51 @@ Manages health metrics, log queries, agents, investigations, detection rules, co
 | `siem investigations set-status` | PUT | `/idr/v1/investigations/{id}/status/{status}` | Update investigation status |
 | `siem investigations close-bulk` | POST | `/idr/v1/investigations/bulk_close` | Bulk close investigations |
 | `siem investigations assign` | PUT | `/idr/v1/investigations/{id}/assignee` | Assign investigation |
+| `siem investigations comments list` | GET | `/idr/v1/comments` | List investigation comments |
+| `siem investigations comments create` | POST | `/idr/v1/comments` | Create a comment |
+| `siem investigations comments get` | GET | `/idr/v1/comments/{rrn}` | Get a comment |
+| `siem investigations comments update` | PUT | `/idr/v1/comments/{rrn}/{visibility}` | Update comment visibility |
+| `siem investigations comments delete` | DELETE | `/idr/v1/comments/{rrn}` | Delete a comment |
+| `siem investigations attachments list` | GET | `/idr/v1/attachments` | List attachments |
+| `siem investigations attachments get` | GET | `/idr/v1/attachments/{rrn}/metadata` | Get attachment metadata |
+| `siem investigations attachments delete` | DELETE | `/idr/v1/attachments/{rrn}` | Delete an attachment |
 | `siem users list` | POST | `/idr/v1/users/_search` | Search IDR users |
 | `siem users get` | GET | `/idr/v1/users/{rrn}` | Get a user by RRN |
-| `siem accounts list` | POST | `/idr/v1/accounts/_search` | Search accounts |
+| `siem accounts search` | POST | `/idr/v1/accounts/_search` | Search accounts |
 | `siem accounts get` | GET | `/idr/v1/accounts/{rrn}` | Get an account |
-| `siem assets list` | POST | `/idr/v1/assets/_search` | Search IDR assets |
-| `siem assets get` | GET | `/idr/v1/assets/{rrn}` | Get an IDR asset |
-| `siem assets local-account` | GET | `/idr/v1/assets/local-accounts/{rrn}` | Get local account |
-| `siem threats create` | POST | `/idr/v1/customthreats` | Create custom threat |
-| `siem threats add-indicators` | POST | `/idr/v1/customthreats/key/{key}/indicators/add` | Add threat indicators |
-| `siem threats replace-indicators` | POST | `/idr/v1/customthreats/key/{key}/indicators/replace` | Replace indicators |
-| `siem threats delete` | POST | `/idr/v1/customthreats/key/{key}/delete` | Delete custom threat |
-| `siem comments list` | GET | `/idr/v1/comments` | List investigation comments |
-| `siem comments create` | POST | `/idr/v1/comments` | Create a comment |
-| `siem comments get` | GET | `/idr/v1/comments/{rrn}` | Get a comment |
-| `siem comments update` | PUT | `/idr/v1/comments/{rrn}/{visibility}` | Update comment visibility |
-| `siem comments delete` | DELETE | `/idr/v1/comments/{rrn}` | Delete a comment |
-| `siem attachments list` | GET | `/idr/v1/attachments` | List attachments |
-| `siem attachments get` | GET | `/idr/v1/attachments/{rrn}/metadata` | Get attachment metadata |
-| `siem attachments delete` | DELETE | `/idr/v1/attachments/{rrn}` | Delete an attachment |
-| `siem saved-queries list` | GET | `/query/saved_queries` | List saved queries |
-| `siem saved-queries get` | GET | `/query/saved_queries/{id}` | Get a saved query |
-| `siem saved-queries create` | POST | `/query/saved_queries` | Create a saved query |
-| `siem saved-queries update` | PUT | `/query/saved_queries/{id}` | Update a saved query |
-| `siem saved-queries delete` | DELETE | `/query/saved_queries/{id}` | Delete a saved query |
-| `siem variables list` | GET | `/query/variables` | List log search variables |
-| `siem variables get` | GET | `/query/variables/{id}` | Get a variable |
-| `siem variables update` | PUT | `/variables/{id}` | Update a variable |
-| `siem variables delete` | DELETE | `/variables/{id}` | Delete a variable |
-| `siem detection-rules list` | GET | `/management/tags` | List detection rules |
-| `siem detection-rules get` | GET | `/management/tags/{id}` | Get a detection rule |
-| `siem detection-rules create` | POST | `/management/tags` | Create a detection rule |
-| `siem detection-rules delete` | DELETE | `/management/tags/{id}` | Delete a detection rule |
-| `siem pre-computed list` | GET | `/query/pre-computed-metrics` | List pre-computed metrics |
-| `siem pre-computed get` | GET | `/query/pre-computed-metrics/{id}` | Get a metric |
-| `siem pre-computed results` | GET | `/query/pre-computed-metrics/{id}/results` | Get metric results |
-| `siem pre-computed create` | POST | `/query/pre-computed-metrics` | Create a metric |
-| `siem pre-computed delete` | DELETE | `/query/pre-computed-metrics/{id}` | Delete a metric |
+| `siem accounts assets search` | POST | `/idr/v1/assets/_search` | Search IDR assets |
+| `siem accounts assets get` | GET | `/idr/v1/assets/{rrn}` | Get an IDR asset |
+| `siem accounts assets local-account` | GET | `/idr/v1/assets/local-accounts/{rrn}` | Get local account |
+| `siem accounts assets search-local-accounts` | POST | `/idr/v1/assets/local-accounts/_search` | Search local accounts |
+| `siem detections threats create` | POST | `/idr/v1/customthreats` | Create custom threat |
+| `siem detections threats add-indicators` | POST | `/idr/v1/customthreats/key/{key}/indicators/add` | Add threat indicators |
+| `siem detections threats replace-indicators` | POST | `/idr/v1/customthreats/key/{key}/indicators/replace` | Replace indicators |
+| `siem detections threats delete` | POST | `/idr/v1/customthreats/key/{key}/delete` | Delete custom threat |
+| `siem queries saved-queries list` | GET | `/query/saved_queries` | List saved queries |
+| `siem queries saved-queries get` | GET | `/query/saved_queries/{id}` | Get a saved query |
+| `siem queries saved-queries create` | POST | `/query/saved_queries` | Create a saved query |
+| `siem queries saved-queries update` | PUT | `/query/saved_queries/{id}` | Update a saved query |
+| `siem queries saved-queries delete` | DELETE | `/query/saved_queries/{id}` | Delete a saved query |
+| `siem queries variables list` | GET | `/query/variables` | List log search variables |
+| `siem queries variables get` | GET | `/query/variables/{id}` | Get a variable |
+| `siem queries variables update` | PUT | `/variables/{id}` | Update a variable |
+| `siem queries variables delete` | DELETE | `/variables/{id}` | Delete a variable |
+| `siem detections detection-rules list` | GET | `/management/tags` | List detection rules |
+| `siem detections detection-rules get` | GET | `/management/tags/{id}` | Get a detection rule |
+| `siem detections detection-rules create` | POST | `/management/tags` | Create a detection rule |
+| `siem detections detection-rules delete` | DELETE | `/management/tags/{id}` | Delete a detection rule |
+| `siem detections notifications list` | GET | `/query/notifications` | List notifications |
+| `siem detections notifications get` | GET | `/query/notifications/{id}` | Get a notification |
+| `siem detections notif-targets list` | GET | `/query/notification-targets` | List notification targets |
+| `siem detections notif-targets get` | GET | `/query/notification-targets/{id}` | Get a notification target |
+| `siem queries pre-computed list` | GET | `/query/pre-computed-metrics` | List pre-computed metrics |
+| `siem queries pre-computed get` | GET | `/query/pre-computed-metrics/{id}` | Get a metric |
+| `siem queries pre-computed results` | GET | `/query/pre-computed-metrics/{id}/results` | Get metric results |
+| `siem queries pre-computed create` | POST | `/query/pre-computed-metrics` | Create a metric |
+| `siem queries pre-computed delete` | DELETE | `/query/pre-computed-metrics/{id}` | Delete a metric |
 | `siem exports list` | GET | `/query/exports` | List log exports |
 | `siem exports get` | GET | `/query/exports/{id}` | Get an export |
 | `siem exports delete` | DELETE | `/query/exports/{id}` | Delete an export |
-| `siem notifications list` | GET | `/query/notifications` | List notifications |
-| `siem notifications get` | GET | `/query/notifications/{id}` | Get a notification |
-| `siem notif-targets list` | GET | `/query/notification-targets` | List notification targets |
-| `siem notif-targets get` | GET | `/query/notification-targets/{id}` | Get a notification target |
 | `siem quarantine-state` | POST | `/graphql` (GQL query) | Query agent quarantine state |
 
 Base URLs:
@@ -265,7 +268,7 @@ r7-cli siem investigations list --status OPEN --all-pages
 r7-cli siem investigations set-status -j <ID> CLOSED
 r7-cli siem collectors list
 r7-cli siem event-sources list --issues-only
-r7-cli siem detection-rules list --type UBA --priority HIGH
+r7-cli siem detections detection-rules list --type UBA --priority HIGH
 ```
 
 ---
@@ -303,13 +306,14 @@ Manages alerts, threats, takedowns, risk scores, and monitored assets via the Th
 | `drp modules` | GET | `/public/v1/account/system-modules` | List account modules |
 | `drp assets list` | GET | `/public/v2/data/assets` | List monitored assets |
 | `drp assets count` | GET | `/public/v2/data/assets` | Count monitored assets |
-| `drp iocs list` | GET | `/public/v1/iocs/sources` | List IOC sources |
+| `drp ioc-sources list` | GET | `/public/v1/iocs/sources` | List IOC sources |
 | `drp alerts list` | GET | `/public/v2/data/alerts/alerts-list` | List alerts |
 | `drp alerts get` | GET | `/public/v1/data/alerts/get-complete-alert/{id}` | Get alert details |
 | `drp phishing-threats list` | GET | `/public/v1/data/phishing-domains-threats/threats-list` | List phishing threats |
 | `drp phishing-threats get` | GET | `/public/v1/data/phishing-domains-threats/get-complete-threat/{id}` | Get phishing threat |
 | `drp ssl-cert-threats list` | GET | `/public/v1/data/ssl-certificate-threats/threats-list` | List SSL cert threats |
-| `drp ssl-issues-threats list` | GET | `/public/v1/data/ssl-issues-threats/threats-list` | List SSL issue threats |
+| `drp ssl-issue-threats list` | GET | `/public/v1/data/ssl-issues-threats/threats-list` | List SSL issue threats |
+| `drp reported-domains list` | GET | `/public/v1/data/reported-domains/domains-list` | List reported domains |
 | `drp takedowns list` | GET | `/public/v2/data/alerts/alerts-list` | List completed takedowns |
 | `drp takedowns report` | GET | `/public/v1/data/alerts/report-status/{id}` | Get takedown report |
 | `drp risk-score` | GET | `/public/v1/data/alerts/system-risk-score` | Get system risk score |
@@ -336,6 +340,7 @@ Manages users, organizations, products, roles, API keys, features, user groups, 
 | Command | Method | API Endpoint | Description |
 |---------|--------|-------------|-------------|
 | `platform validate` | GET | `/validate` | Validate API key |
+| `platform status` | GET | `status.rapid7.com` | Show platform operational status |
 | `platform search` | POST | `/idr/v1/search` | Search the Insight Platform |
 | `platform users list` | GET | `/account/api/1/users` | List users |
 | `platform users get` | GET | `/account/api/1/users/{id}` | Get a user |
@@ -375,6 +380,25 @@ r7-cli platform orgs list
 r7-cli platform roles list
 r7-cli platform api-keys list
 r7-cli platform credentials list --org-id <ORG_ID>
+r7-cli platform status
+```
+
+---
+
+### `r7-cli platform status` — Platform Operational Status
+
+Shows Rapid7 platform operational status from status.rapid7.com. No authentication required.
+
+| Command | Method | Source | Description |
+|---------|--------|--------|-------------|
+| `platform status` | GET | `status.rapid7.com` | Show platform health, degraded services, and active incidents |
+
+Options:
+- `--json` — Output raw JSON instead of human-readable format
+
+```bash
+r7-cli platform status
+r7-cli platform status --json
 ```
 
 ---
@@ -450,18 +474,29 @@ r7-cli -c platform compliance  # reuse cached parquet files
 
 Generates a NIST CSF × CIS v8 defender coverage matrix based on licensed Rapid7 products. Supports deployment-aware scoring that checks actual infrastructure state.
 
+Running `r7-cli platform matrix` directly executes the matrix (the `rapid7` subcommand is retained as an alias for backward compatibility).
+
 | Command | API Used (with `--reality`) |
 |---------|---------------------------|
-| `matrix rapid7` | GET `/idr/v1/health-metrics` (collectors, event sources, agents) |
+| `matrix` / `matrix rapid7` | GET `/idr/v1/health-metrics` (collectors, event sources, agents) |
 | | POST `/surface/graph-api/objects/table` (SC connectors) |
 | | GET `/idr/v1/health-metrics?resourceTypes=collectors` |
 
+Options:
+- `-p, --percent` — Show coverage percentages instead of checkmarks
+- `--solution` — Show Rapid7 solution names mapped to each cell
+- `--reality` / `--deployment` — Adjust percentages based on actual deployment state
+- `--scoring` — Print the scoring rules and exit
+- `--json` — Output the matrix as JSON
+
 ```bash
-r7-cli platform matrix rapid7
-r7-cli platform matrix rapid7 -p          # percentage mode
-r7-cli platform matrix rapid7 --solution  # show product mappings
-r7-cli platform matrix rapid7 --reality   # adjust for deployment state
-r7-cli platform matrix rapid7 --scoring   # view scoring rules
+r7-cli platform matrix                    # default checkmark mode
+r7-cli platform matrix -p                 # percentage mode
+r7-cli platform matrix --solution         # show product mappings
+r7-cli platform matrix --reality          # adjust for deployment state
+r7-cli platform matrix --scoring          # view scoring rules
+r7-cli platform matrix --json             # JSON output
+r7-cli platform matrix rapid7             # alias (same as bare invocation)
 ```
 
 ---
@@ -626,8 +661,8 @@ r7-cli platform products list
 r7-cli -o table platform products list
 
 # CSV / TSV
-r7-cli -o csv vm engines list
-r7-cli -o tsv vm engines list
+r7-cli -o csv vm scan-engines list
+r7-cli -o tsv vm scan-engines list
 
 # Compact single-line JSON (field priority reordering, terminal-width truncation)
 r7-cli -s platform products list
@@ -645,7 +680,7 @@ Many commands support `-a`/`--auto` for interactive selection using terminal pro
 
 ```bash
 r7-cli vm scans get --auto
-r7-cli vm engines get --auto
+r7-cli vm scan-engines get --auto
 r7-cli siem users get --auto
 r7-cli appsec apps get --auto
 ```
@@ -684,6 +719,8 @@ r7cli/                     # Package root (workspace root)
 ├── extensions.py          # Extension Library browser (no auth)
 ├── compliance.py          # VM policy export → SQL dump pipeline
 ├── matrix.py              # NIST CSF × CIS v8 coverage matrix
+├── cis.py                 # CIS/NIST CSF controls lookup (shared by per-solution cis subcommands)
+├── controls.csv           # Master controls CSV (CIS, NIST CSF, PCI DSS, HITRUST, MITRE)
 ├── parquet_filter.py      # Parquet file resolution, filtering, auto-join
 ├── solutions/
 │   ├── vm.py              # InsightVM

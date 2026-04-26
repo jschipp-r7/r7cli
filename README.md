@@ -56,6 +56,12 @@ r7-cli drp alerts list --severity High --days 30
 # Platform admin
 r7-cli platform products list
 r7-cli platform users list
+r7-cli platform status
+
+# Coverage matrix
+r7-cli platform matrix
+r7-cli platform matrix --percent
+r7-cli platform matrix --json
 ```
 
 ## Global Options
@@ -69,13 +75,17 @@ r7-cli platform users list
 | `-l, --limit` | Limit result count |
 | `-c, --cache` | Use cached responses |
 | `-v, --verbose` | Log requests to stderr |
+| `--debug` | Log full request/response bodies |
+| `-t, --timeout` | Request timeout in seconds (default: 30) |
 | `--search-fields` | Search response for a field name |
+| `--drp-token` | DRP API token in `user:key` format |
+| `--tldr` | Show quick-reference examples |
 
 ## Output Formats
 
 ```bash
 r7-cli -o table platform products list   # table
-r7-cli -o csv vm engines list            # CSV
+r7-cli -o csv vm scan-engines list            # CSV
 r7-cli -s platform products list         # compact JSON
 r7-cli -l 5 vm scans list               # limit to 5
 ```
