@@ -1,0 +1,16 @@
+{
+  "enabled": true,
+  "name": "Update Docs After Code Changes",
+  "description": "After writing to Python source files, reminds the agent to update help text, tldr output, README.md, and docs/REFERENCE.md if the change adds, removes, or modifies CLI commands, options, or features.",
+  "version": "1",
+  "when": {
+    "type": "postToolUse",
+    "toolTypes": [
+      "write"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "If the file you just wrote is a Python source file (.py) and the change adds, removes, or modifies a CLI command, option, argument, or user-facing feature, you MUST also update the following before finishing:\n\n1. **Help text** — Ensure Click decorators have accurate `help=` strings for any new/changed commands and options.\n2. **TLDR menu** — Update the `--tldr` output in `main.py` to include examples for any new commands.\n3. **README.md** — Update the project README to reflect the new/changed functionality.\n4. **docs/REFERENCE.md** — Update the CLI reference documentation with the new/changed commands, options, and usage examples.\n\nIf the change is purely internal (refactoring, bug fix with no interface change, test-only), skip this step."
+  }
+}
