@@ -5,6 +5,9 @@
 *__pycache__*
 *.mapping
 *.csv
+# But allow package data files
+!src/r7cli/controls.csv
+!src/r7cli/product-market.mappings
 
 # Secrets and credentials
 .env

@@ -10,6 +10,7 @@ inclusion: always
 
 ## Build System
 - setuptools + wheel (`pyproject.toml`)
+- Standard `src` layout: package at `src/r7cli/`
 - Editable install: `pip install -e .`
 - Dev install: `pip install -e ".[dev]"`
 
@@ -26,7 +27,7 @@ inclusion: always
 
 ## Entry Point
 - CLI entry: `r7-cli` → `r7cli.main:cli`
-- The workspace root IS the `r7cli` package (via `tool.setuptools.package-dir`)
+- Package lives at `src/r7cli/` (standard `src` layout via `tool.setuptools.package-dir`)
 
 ## Common Commands
 ```bash

@@ -29,5 +29,5 @@ packages = ["r7cli", "r7cli.solutions"]
 package-data = {"r7cli" = ["controls.csv", "product-market.mappings"]}
 
 [tool.setuptools.package-dir]
-r7cli = "."
-"r7cli.solutions" = "solutions"
+r7cli = "src/r7cli"
+"r7cli.solutions" = "src/r7cli/solutions"
