@@ -1,4 +1,0 @@
-# file: /Users/jschipp/repos/r7cli/client.py
-# hypothesis_version: 6.151.12
-
-[200, 401, 429, 1000, '-H', '-X', '-d', '-s', '-u', '/products', 'Content-Type', 'GET', 'HEAD', 'InsightAppSec', 'InsightCloudSec', 'InsightConnect', 'InsightIDR', 'InsightVM', 'POST', 'Surface Command', 'X-Api-Key', 'X-RateLimit-Reset', '[REDACTED]', 'application/json', 'appsec', 'asm', 'cnapp', 'curl', 'drp', 'error', 'message', 'platform', 'product_code', 'siem', 'soar', 'vm', '|']

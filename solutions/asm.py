@@ -7,7 +7,7 @@ import click
 from r7cli.cli_group import GlobalFlagHintGroup
 
 from r7cli.client import R7Client
-from r7cli.config import Config
+from r7cli.helpers import emit, get_config, handle_errors
 from r7cli.models import SC_BASE, R7Error
 from r7cli.output import format_output
 
@@ -15,11 +15,7 @@ _SC_TABLE_URL = "{base}/graph-api/objects/table"
 _LIST_CYPHER = 'MATCH (m:`sys.cypher-query`) RETURN m'
 
 
-def _get_config(ctx: click.Context) -> Config:
-    return ctx.obj["config"]
-
-
-def _fetch_queries(client: R7Client, config: Config) -> list[dict]:
+def _fetch_queries(client: R7Client, config) -> list[dict]:
     """Fetch all saved queries from the Surface Command graph API."""
     base = SC_BASE.format(region=config.region)
     url = _SC_TABLE_URL.format(base=base)
@@ -51,7 +47,7 @@ def _query_cypher(item: dict) -> str:
     return str(data[3]) if len(data) > 3 else ""
 
 
-def _interactive_query_select(client: R7Client, config: Config) -> dict:
+def _interactive_query_select(client: R7Client, config) -> dict:
     """Fetch queries, show interactive menu with name and id, return selected item."""
     import questionary
 
@@ -102,25 +98,22 @@ def connectors(ctx):
 
 @connectors.command("list")
 @click.pass_context
+@handle_errors
 def connectors_list(ctx):
     """List connectors from Surface Command."""
-    config = _get_config(ctx)
+    config = get_config(ctx)
     client = R7Client(config)
     base = SC_BASE.format(region=config.region)
     url = _SC_TABLE_URL.format(base=base)
 
-    try:
-        result = client.post(
-            url,
-            json={"cypher": "MATCH (a:`sys.apps.integration`) RETURN a"},
-            params={"format": "json"},
-            solution="asm",
-            subcommand="connectors-list",
-        )
-        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
-    except R7Error as exc:
-        click.echo(str(exc), err=True)
-        sys.exit(exc.exit_code)
+    result = client.post(
+        url,
+        json={"cypher": "MATCH (a:`sys.apps.integration`) RETURN a"},
+        params={"format": "json"},
+        solution="asm",
+        subcommand="connectors-list",
+    )
+    emit(result, config)
 
 
 # ---------------------------------------------------------------------------
@@ -136,17 +129,14 @@ def queries(ctx):
 
 @queries.command("list")
 @click.pass_context
+@handle_errors
 def queries_list(ctx):
     """List the available saved queries from Surface Command."""
-    config = _get_config(ctx)
+    config = get_config(ctx)
     client = R7Client(config)
 
-    try:
-        items = _fetch_queries(client, config)
-        click.echo(format_output(items, config.output_format, config.limit, config.search, short=config.short))
-    except R7Error as exc:
-        click.echo(str(exc), err=True)
-        sys.exit(exc.exit_code)
+    items = _fetch_queries(client, config)
+    emit(items, config)
 
 
 # ---------------------------------------------------------------------------
@@ -158,30 +148,27 @@ def queries_list(ctx):
 @click.option("-a", "--auto", "auto_select", is_flag=True,
               help="Interactively select a query from the list.")
 @click.pass_context
+@handle_errors
 def queries_get(ctx, query_id, auto_select):
     """Get a saved query by ID."""
-    config = _get_config(ctx)
+    config = get_config(ctx)
     client = R7Client(config)
 
     if not query_id and not auto_select:
         raise click.ClickException("Provide --id or use --auto to select interactively.")
 
-    try:
-        if auto_select:
-            selected = _interactive_query_select(client, config)
-            click.echo(format_output(selected, config.output_format, config.limit, config.search, short=config.short))
-            return
+    if auto_select:
+        selected = _interactive_query_select(client, config)
+        emit(selected, config)
+        return
 
-        # Filter from the full list
-        items = _fetch_queries(client, config)
-        match = [i for i in items if _query_id(i) == query_id]
-        if not match:
-            click.echo(f"No query found with ID '{query_id}'.", err=True)
-            sys.exit(1)
-        click.echo(format_output(match[0], config.output_format, config.limit, config.search, short=config.short))
-    except R7Error as exc:
-        click.echo(str(exc), err=True)
-        sys.exit(exc.exit_code)
+    # Filter from the full list
+    items = _fetch_queries(client, config)
+    match = [i for i in items if _query_id(i) == query_id]
+    if not match:
+        click.echo(f"No query found with ID '{query_id}'.", err=True)
+        sys.exit(1)
+    emit(match[0], config)
 
 
 # ---------------------------------------------------------------------------
@@ -195,9 +182,10 @@ def queries_get(ctx, query_id, auto_select):
 @click.option("-a", "--auto", "auto_select", is_flag=True,
               help="Interactively select a saved query and execute it.")
 @click.pass_context
+@handle_errors
 def queries_execute(ctx, query, query_file, auto_select):
     """Execute a Cypher query against Surface Command."""
-    config = _get_config(ctx)
+    config = get_config(ctx)
     client = R7Client(config)
 
     if auto_select:
@@ -221,15 +209,11 @@ def queries_execute(ctx, query, query_file, auto_select):
     base = SC_BASE.format(region=config.region)
     url = _SC_TABLE_URL.format(base=base)
 
-    try:
-        result = client.post(
-            url,
-            json={"cypher": cypher},
-            params={"format": "json"},
-            solution="asm",
-            subcommand="execute",
-        )
-        click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
-    except R7Error as exc:
-        click.echo(str(exc), err=True)
-        sys.exit(exc.exit_code)
+    result = client.post(
+        url,
+        json={"cypher": cypher},
+        params={"format": "json"},
+        solution="asm",
+        subcommand="execute",
+    )
+    emit(result, config)

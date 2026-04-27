@@ -29,6 +29,7 @@ build/
 *.pyc
 .pytest_cache/
 .hypothesis/
+.ruff_cache/
 
 # Generated databases
 *.db

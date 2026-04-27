@@ -15,6 +15,16 @@ from r7cli.client import R7Client
 from r7cli.config import Config
 from r7cli.models import CONNECT_V1_BASE, CONNECT_V2_BASE, R7Error
 from r7cli.output import format_output
+from r7cli.helpers import (
+    extract_item_id,
+    get_config,
+    emit,
+    handle_errors,
+    resolve_body,
+    poll_loop,
+    auto_poll_options,
+    data_body_options,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -23,21 +33,13 @@ from r7cli.output import format_output
 
 _DOC_BASE = "https://docs.rapid7.com/insightconnect/api/"
 
+# Shared helpers imported from r7cli.helpers:
+#   get_config, extract_item_id, resolve_body, emit, handle_errors, poll_loop
 
-def _get_config(ctx: click.Context) -> Config:
-    return ctx.obj["config"]
-
-
-def _resolve_body(data_str: str | None, data_file: str | None) -> dict | None:
-    import json as _json
-    if data_str and data_file:
-        click.echo("Provide either --data or --data-file, not both.")
-    if data_str:
-        return _json.loads(data_str)
-    if data_file:
-        with open(data_file) as fh:
-            return _json.load(fh)
-    return None
+# Keep underscore aliases for backward compatibility within this module
+_get_config = get_config
+_resolve_body = resolve_body
+_extract_item_id = extract_item_id
 
 
 # ---------------------------------------------------------------------------
@@ -480,14 +482,6 @@ def _interactive_job_select(client: R7Client, config: Config, base: str) -> str:
         sys.exit(1)
     return selected
 
-
-def _extract_item_id(item: dict) -> str:
-    """Extract the best available ID from a dict, trying common field names."""
-    for key in ("id", "_id", "workflowId", "job_id", "rrn"):
-        val = item.get(key, "")
-        if val:
-            return str(val)
-    return ""
 
 
 def _find_job_dicts(data: Any) -> list[dict]:

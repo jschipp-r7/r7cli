@@ -1,4 +1,0 @@
-# file: /Users/jschipp/repos/r7cli/cli_group.py
-# hypothesis_version: 6.151.12
-
-[' <value>', '--api-key', '--cache', '--debug', '--drp-token', '--help', '--limit', '--output', '--region', '--search-fields', '--short', '--timeout', '--verbose', '-c', '-h', '-k', '-l', '-o', '-r', '-s', '-t', '-v', '=', 'context_settings', 'help_option_names']

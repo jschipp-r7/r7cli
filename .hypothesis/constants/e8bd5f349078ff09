@@ -1,4 +1,0 @@
-# file: /Users/jschipp/repos/r7cli/config.py
-# hypothesis_version: 6.151.12
-
-[', ', 'R7_DRP_TOKEN', 'R7_REGION', 'R7_X_API_KEY', 'json', 'us']

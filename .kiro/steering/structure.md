@@ -14,6 +14,7 @@ The workspace root is the `r7cli` Python package itself (mapped via `pyproject.t
 ├── models.py              # Shared constants (URLs, regions, solutions), GraphQL strings, exception hierarchy
 ├── client.py              # R7Client — HTTP wrapper with auth, caching, logging, rate-limit retry, error mapping
 ├── output.py              # format_output() — json/table/csv/tsv/sql formatting, field search, short mode
+├── helpers.py             # Shared helpers — get_config, extract_items, extract_item_id, resolve_body, parse_cmp_expr, emit, handle_errors, poll_loop, option decorators
 ├── cache.py               # CacheStore — SHA-256-keyed JSON file cache in ~/.r7-cli/cache/
 ├── jobs.py                # JobStore — export job persistence in ~/.r7-cli/jobs.json
 ├── progress.py            # ANSI progress bar utilities (progress_bar, spinner, pagination/download progress)
@@ -53,9 +54,10 @@ The workspace root is the `r7cli` Python package itself (mapped via `pyproject.t
 - Solution modules are lazily imported by `SolutionGroup.get_command()` in `main.py`
 - `platform.py` registers cross-cutting subgroups: `assets`, `extensions`, `compliance`, `matrix`, `status`
 - All solution commands follow the same pattern: get config from context → create R7Client → call API → format output
-- Helper functions `_extract_items()`, `_extract_item_id()`, `_resolve_body()` are duplicated across solution modules (not shared)
+- Common helpers live in `helpers.py`: `get_config()`, `extract_items()`, `extract_item_id()`, `resolve_body()`, `parse_cmp_expr()`, `emit()`, `handle_errors()`, `poll_loop()`, `auto_poll_options`, `data_body_options`
+- Solution modules import these shared helpers; some keep underscore aliases (e.g. `_get_config = get_config`) for internal consistency
 - Interactive selection (`--auto` / `-a`) uses `questionary` for terminal prompts
-- Polling mode (`--auto` with `-i`) tracks seen IDs and prints only new entries
+- Polling mode (`--auto` with `-i`) uses `poll_loop()` from helpers or inline loops for custom cases
 - Every solution group registers a `cis` subcommand via `cis.make_cis_command()` for CIS/NIST CSF controls lookup
 - `compliance.py` is a Click group (`invoke_without_command=True`): bare invocation runs export, `list` subcommand queries controls
 - `matrix.py` is a Click group with `matrix` (default) and `rapid7` (alias) subcommands; supports `--percent`, `--solution`, `--reality`, `--scoring`, `--json`

@@ -7,16 +7,12 @@ from datetime import datetime
 import click
 import httpx
 
-from r7cli.config import Config
+from r7cli.helpers import emit, get_config
 from r7cli.models import NetworkError, R7Error
 from r7cli.output import format_output
 
 
 _STATUS_BASE = "https://status.rapid7.com/api/v2"
-
-
-def _get_config(ctx: click.Context) -> Config:
-    return ctx.obj["config"]
 
 
 def _fetch_json(url: str, timeout: float = 30.0) -> dict:
@@ -201,7 +197,7 @@ def status(ctx, as_json):
     Displays the current platform health, any degraded services, and active
     incidents with their update history. No authentication required.
     """
-    config = _get_config(ctx)
+    config = get_config(ctx)
     timeout = float(config.timeout)
 
     try:

@@ -14,6 +14,18 @@ from r7cli.client import R7Client
 from r7cli.config import Config
 from r7cli.models import ACCOUNT_BASE, IAS_V1_BASE, R7Error, UserInputError
 from r7cli.output import format_output
+from r7cli.helpers import (
+    extract_items,
+    extract_item_id,
+    get_config,
+    emit,
+    handle_errors,
+    resolve_body,
+    parse_cmp_expr,
+    poll_loop,
+    auto_poll_options,
+    data_body_options,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -21,6 +33,16 @@ from r7cli.output import format_output
 # ---------------------------------------------------------------------------
 
 _DOC_BASE = "https://help.rapid7.com/insightappsec/en-us/api/v1/docs.html"
+
+# Shared helpers imported from r7cli.helpers:
+#   get_config, extract_items, extract_item_id, resolve_body,
+#   parse_cmp_expr, emit, handle_errors, poll_loop
+
+# Keep underscore aliases for backward compatibility within this module
+_get_config = get_config
+_extract_items = extract_items
+_extract_item_id = extract_item_id
+_resolve_body = resolve_body
 
 # Cache for resolved user names to avoid repeated API calls
 _user_name_cache: dict[str, str] = {}
@@ -43,52 +65,6 @@ def _resolve_user_name(client, config, user_id):
     except R7Error:
         _user_name_cache[user_id] = user_id
         return user_id
-
-
-def _get_config(ctx: click.Context) -> Config:
-    return ctx.obj["config"]
-
-
-def _extract_items(data) -> list[dict]:
-    """Find the largest list of dicts in the response."""
-    if isinstance(data, list):
-        if data and isinstance(data[0], dict):
-            return data
-        return []
-    if isinstance(data, dict):
-        best: list[dict] = []
-        for val in data.values():
-            if isinstance(val, list) and val and isinstance(val[0], dict):
-                if len(val) > len(best):
-                    best = val
-            elif isinstance(val, dict):
-                nested = _extract_items(val)
-                if len(nested) > len(best):
-                    best = nested
-        return best
-    return []
-
-
-def _extract_item_id(item: dict) -> str:
-    """Extract the best available ID from a dict."""
-    for key in ("id", "_id", "workflowId", "job_id", "rrn"):
-        val = item.get(key, "")
-        if val:
-            return str(val)
-    return ""
-
-
-def _resolve_body(data_str: str | None, data_file: str | None) -> dict | None:
-    """Parse a JSON body from --data or --data-file."""
-    import json as _json
-    if data_str and data_file:
-        raise UserInputError("Provide either --data or --data-file, not both.")
-    if data_str:
-        return _json.loads(data_str)
-    if data_file:
-        with open(data_file) as fh:
-            return _json.load(fh)
-    return None
 
 
 def _interactive_select(client, config, list_path, resource_name, params=None):
@@ -1228,17 +1204,11 @@ def _resolve_app_id_by_name(client, config, name):
 
 
 def _parse_cmp_op(expr):
-    """Extract (operator_symbol, operator_func, remainder) from an expression.
-
-    Supported operators: >=, <=, >, <, =
-    If no operator prefix is found returns ('=', operator.eq, expr).
-    """
+    """Adapter around parse_cmp_expr that returns (symbol, func, value) for backward compat."""
+    func, val = parse_cmp_expr(expr)
     import operator as _op
-    expr = expr.strip()
-    for sym, func in [(">=", _op.ge), ("<=", _op.le), (">", _op.gt), ("<", _op.lt), ("=", _op.eq)]:
-        if expr.startswith(sym):
-            return sym, func, expr[len(sym):].strip()
-    return "=", _op.eq, expr
+    _func_to_sym = {_op.ge: ">=", _op.le: "<=", _op.gt: ">", _op.lt: "<", _op.eq: "="}
+    return _func_to_sym.get(func, "="), func, val
 
 
 def _parse_score_expr(expr):

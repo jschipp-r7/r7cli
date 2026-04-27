@@ -1,4 +1,0 @@
-# file: /Users/jschipp/repos/r7cli/cis.py
-# hypothesis_version: 6.151.12
-
-[',', '--dspm', '--grc', '--ig1', '--ig2', '--ig3', '--other', '.', 'CIS', 'CIS Asset Type', 'Control Description', 'Control ID', 'Cyber GRC', 'Cyber GRC Add-On', 'DRP', 'DRPS', 'DSPM', 'DSPM Add-On', 'Framework', 'IG1', 'IG2', 'IG3', 'InsightAppSec', 'InsightCloudSec', 'InsightConnect', 'InsightIDR', 'InsightVM', 'Market Categories', 'N/A', 'Nexpose', 'Solutions', 'Surface Command', 'Threat Command', 'Version', 'appsec', 'asm', 'cis', 'cnapp', 'config', 'controls.csv', 'drp', 'dspm', 'grc', 'insightAppSec', 'insightCloudSec', 'insightConnect', 'insightIDR', 'insightVM', 'siem', 'soar', 'utf-8', 'vm']

@@ -46,6 +46,7 @@ r7-cli <solution> <subcommand> [options]
 - All HTTP goes through `R7Client` (`client.py`) which handles auth, caching, logging, rate-limits, and error mapping
 - Config resolution: CLI flag → env var → default (`config.py`)
 - Output formatting is centralized in `output.py` via `format_output()`
+- Shared helpers in `helpers.py`: `get_config`, `extract_items`, `extract_item_id`, `resolve_body`, `parse_cmp_expr`, `emit`, `handle_errors`, `poll_loop`, `auto_poll_options`, `data_body_options`
 - Response caching lives in `~/.r7-cli/cache/` as SHA-256-keyed JSON files
 - Job persistence in `~/.r7-cli/jobs.json`
 - Custom Click group `GlobalFlagHintGroup` enforces global flags before subcommands

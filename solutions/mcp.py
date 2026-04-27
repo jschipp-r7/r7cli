@@ -18,6 +18,7 @@ import click
 from r7cli.cli_group import GlobalFlagHintGroup
 from r7cli.config import Config
 from r7cli.models import R7Error, UserInputError
+from r7cli.helpers import get_config
 from r7cli.progress import spinner
 
 
@@ -43,8 +44,8 @@ _MCP_TOOL_TIMEOUT = 120
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _get_config(ctx: click.Context) -> Config:
-    return ctx.obj["config"]
+# Shared helper imported from r7cli.helpers
+_get_config = get_config
 
 
 def _log_verbose(config: Config, msg: str) -> None:

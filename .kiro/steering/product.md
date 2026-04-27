@@ -48,16 +48,22 @@ Every solution command follows the same shape:
 
 When adding a new command, replicate this pattern exactly. Do not introduce alternative HTTP clients or output paths.
 
-## Per-Module Helpers (Not Shared)
+## Shared Helpers (`helpers.py`)
 
-Each solution module re-defines these private helpers locally:
+Common helpers are centralized in `helpers.py` and imported by all solution modules:
 
-- `_get_config(ctx)` — extract `Config` from `ctx.obj["config"]`
-- `_extract_items(data)` — normalize API response into a list of dicts
-- `_extract_item_id(item)` — pull the best identifier from a dict (tries `id`, `rrn`, `key`, etc.)
-- `_resolve_body(data_str, data_file)` — parse inline JSON or read from file for POST/PUT payloads
+- `get_config(ctx)` — extract `Config` from `ctx.obj["config"]`
+- `extract_items(data)` — normalize API response into a list of dicts
+- `extract_item_id(item)` — pull the best identifier from a dict (tries `id`, `rrn`, `key`, etc.)
+- `resolve_body(data_str, data_file)` — parse inline JSON or read from file for POST/PUT payloads
+- `parse_cmp_expr(expr)` — parse comparison expressions like `>=7.5` into `(operator_func, value)`
+- `emit(data, config)` — shorthand for `click.echo(format_output(...))`
+- `handle_errors` — decorator that catches `R7Error` and exits with the right code
+- `poll_loop(fetch, config, interval)` — generic auto-poll loop that prints only new items
+- `auto_poll_options` — Click decorator attaching `-a/--auto` and `-i/--interval` options
+- `data_body_options` — Click decorator attaching `--data` and `--data-file` options
 
-These are intentionally duplicated, not shared. Keep them private (underscore-prefixed) and co-located with their solution module.
+Solution modules may keep underscore aliases (e.g. `_get_config = get_config`) for internal consistency. When adding a new command, use the shared helpers from `helpers.py` rather than defining local copies.
 
 ## Global Options
 
