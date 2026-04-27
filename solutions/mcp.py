@@ -1127,38 +1127,80 @@ def _kill_stale_mcp_processes(config: Config, yes: bool = False) -> None:
     """Find and kill orphaned rapid7-mcp-server processes."""
     import signal as _signal
 
+    my_pid = os.getpid()
     pids: list[int] = []
+
+    # Strategy 1: pgrep -f (full command line match)
     try:
-        # Use pgrep -f to match the full command line (catches Python script wrappers)
         result = subprocess.run(
             ["pgrep", "-f", _MCP_SERVER_CMD],
             capture_output=True, text=True,
         )
-        pids = [int(p) for p in result.stdout.strip().split("\n") if p.strip()]
+        for p in result.stdout.strip().split("\n"):
+            p = p.strip()
+            if p:
+                try:
+                    pid = int(p)
+                    if pid != my_pid:
+                        pids.append(pid)
+                except ValueError:
+                    continue
     except (subprocess.SubprocessError, ValueError):
         pass
 
-    # Fallback: search via ps for processes whose command line contains the server name.
-    # This catches cases where pgrep -f truncates or misses the match on macOS.
+    # Strategy 2: ps -eo with wide output to avoid macOS truncation.
+    # On macOS, pgrep -f can miss processes when the kernel's cached
+    # command line is truncated.  `ps -ww` forces full-width output.
     if not pids:
         try:
             result = subprocess.run(
-                ["ps", "aux"],
+                ["ps", "-eo", "pid,command", "-ww"],
                 capture_output=True, text=True,
             )
-            for line in result.stdout.splitlines():
-                if _MCP_SERVER_CMD in line and "pgrep" not in line and "ps aux" not in line:
-                    parts = line.split()
-                    if len(parts) >= 2:
+            for line in result.stdout.splitlines()[1:]:  # skip header
+                if _MCP_SERVER_CMD in line:
+                    # Skip lines that are clearly our own detection commands
+                    if "pgrep" in line or "ps -eo" in line or "ps aux" in line:
+                        continue
+                    parts = line.strip().split(None, 1)
+                    if len(parts) >= 1:
                         try:
-                            pid = int(parts[1])
-                            # Don't include our own process
-                            if pid != os.getpid():
+                            pid = int(parts[0])
+                            if pid != my_pid:
                                 pids.append(pid)
                         except ValueError:
                             continue
         except subprocess.SubprocessError:
             pass
+
+    # Strategy 3: lsof on the DuckDB tracking database.
+    # If the server is holding the DB lock, we can find it even when
+    # the process name doesn't match (e.g. shows as "Python").
+    if not pids:
+        tracking_db = Path("rapid7_bulk_export_tracking.db").resolve()
+        data_dir_db = _MCP_DATA_DIR / "rapid7_bulk_export.db"
+        for db_path in [tracking_db, data_dir_db]:
+            if not db_path.exists():
+                continue
+            try:
+                result = subprocess.run(
+                    ["lsof", str(db_path)],
+                    capture_output=True, text=True,
+                )
+                for line in result.stdout.splitlines()[1:]:  # skip header
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        try:
+                            pid = int(parts[1])
+                            if pid != my_pid:
+                                pids.append(pid)
+                        except ValueError:
+                            continue
+            except subprocess.SubprocessError:
+                pass
+
+    # Deduplicate
+    pids = sorted(set(pids))
 
     if not pids:
         click.echo("No stale rapid7-mcp-server processes found.")
