@@ -1065,27 +1065,118 @@ def mcp_stats(ctx):
 
 
 # ---------------------------------------------------------------------------
-# mcp list-exports
+# mcp list-files
 # ---------------------------------------------------------------------------
 
-@mcp_group.command("list-exports")
+@mcp_group.command("list-files")
 @click.option("-l", "--limit", type=int, default=10, help="Max exports to show (default: 10).")
 @click.pass_context
-def mcp_list_exports(ctx, limit):
-    """List recent exports tracked by the MCP server.
+def mcp_list_files(ctx, limit):
+    """List recent exports and their local Parquet file paths.
+
+    \b
+    Shows export metadata along with the file paths of downloaded
+    Parquet files on disk.
 
     \b
     Examples:
-      r7-cli vm export mcp list-exports
-      r7-cli vm export mcp list-exports --limit 5
+      r7-cli vm export mcp list-files
+      r7-cli vm export mcp list-files --limit 5
     """
     config = _get_config(ctx)
     try:
         result = _call_tool(config, "list_rapid7_exports", {"limit": limit})
-        click.echo(result)
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)
+
+    # Display the export list with file paths appended
+    if not result or not result.strip():
+        click.echo("No exports found.")
+        return
+
+    # Try to resolve file paths from the data directory
+    data_dir = _MCP_DATA_DIR
+    parquet_files: dict[str, list[str]] = {}  # export_id -> list of file paths
+
+    # Scan downloads/ and imports/ for parquet files
+    for subdir_name in ("downloads", "imports"):
+        subdir = data_dir / subdir_name
+        if subdir.exists():
+            for parquet_file in subdir.rglob("*.parquet"):
+                # Try to associate with an export ID from the directory name
+                # Files are typically stored as downloads/<export_id>/<file>.parquet
+                # or downloads/<type>.<timestamp>.parquet
+                relative = parquet_file.relative_to(subdir)
+                parts = relative.parts
+                if len(parts) >= 2:
+                    # Subdirectory name might be the export ID
+                    export_key = parts[0]
+                    parquet_files.setdefault(export_key, []).append(str(parquet_file))
+                else:
+                    # Top-level file — associate with a generic key
+                    parquet_files.setdefault("_top", []).append(str(parquet_file))
+
+    # Also try querying the tracking DB for file paths
+    file_paths_from_db: dict[str, list[str]] = {}
+    try:
+        sql = (
+            "SELECT export_id, file_path FROM export_files "
+            "ORDER BY created_at DESC"
+        )
+        db_result = _call_tool(config, "query_rapid7", {"sql": sql})
+        if db_result and "error" not in db_result.lower():
+            for line in db_result.strip().splitlines():
+                # Parse rows — format varies but typically pipe or comma separated
+                line = line.strip()
+                if not line or line.startswith(("-", "=", "export_id")):
+                    continue
+                # Try pipe-separated (common DuckDB output)
+                if "|" in line:
+                    parts = [p.strip() for p in line.split("|")]
+                    if len(parts) >= 2 and parts[0] and parts[1]:
+                        file_paths_from_db.setdefault(parts[0], []).append(parts[1])
+                # Try comma-separated
+                elif "," in line:
+                    parts = [p.strip() for p in line.split(",", 1)]
+                    if len(parts) >= 2 and parts[0] and parts[1]:
+                        file_paths_from_db.setdefault(parts[0], []).append(parts[1])
+    except (R7Error, Exception):
+        # Tracking table may not exist or have a different schema — that's fine
+        pass
+
+    # Print the export list, injecting file paths after each export block
+    lines = result.strip().splitlines()
+    output_lines: list[str] = []
+    current_export_id: str | None = None
+
+    for line in lines:
+        output_lines.append(line)
+        # Detect export ID lines to associate file paths
+        if line.strip().startswith("Export ID:"):
+            current_export_id = line.strip().split("Export ID:", 1)[1].strip()
+        # After the "Files:" or "Rows:" line (last field), inject paths
+        if line.strip().startswith("Rows:") and current_export_id:
+            # Gather paths from DB query or filesystem scan
+            paths = file_paths_from_db.get(current_export_id, [])
+            if not paths:
+                paths = parquet_files.get(current_export_id, [])
+            if not paths:
+                # Try scanning for files matching this export ID in data dir
+                for subdir_name in ("downloads", "imports"):
+                    export_dir = data_dir / subdir_name / current_export_id
+                    if export_dir.exists():
+                        paths = [str(f) for f in export_dir.rglob("*.parquet")]
+                        break
+            if paths:
+                for p in sorted(paths):
+                    output_lines.append(f"  → {p}")
+            else:
+                # Fallback: show the data directory where files would be
+                output_lines.append(f"  → {data_dir / 'downloads' / current_export_id}/")
+            current_export_id = None
+
+    click.echo("\n".join(output_lines))
 
 
 

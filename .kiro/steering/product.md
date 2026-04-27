@@ -131,7 +131,7 @@ The `vm export mcp` subgroup integrates the [Rapid7 Bulk Export MCP](https://git
 - `mcp configure` — writes MCP config for Kiro, Claude Desktop, VS Code, or Claude Code
 - `mcp start-export` / `mcp status` / `mcp download` — manage exports via MCP tools
 - `mcp query "SQL"` — execute SQL against the local DuckDB database
-- `mcp schema` / `mcp stats` / `mcp list-exports` / `mcp suggest` — introspect loaded data
+- `mcp schema` / `mcp stats` / `mcp list-files` / `mcp suggest` — introspect loaded data
 - The MCP server binary is `rapid7-mcp-server`; env vars `RAPID7_API_KEY` and `RAPID7_REGION` are passed from the CLI config
 
 ## Natural Language Commands (ai)

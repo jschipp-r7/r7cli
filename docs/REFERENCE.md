@@ -197,7 +197,7 @@ Manages vulnerability scans, assets, engines, sites, vulnerabilities, and bulk e
 | `vm export mcp query` | MCP | `query_rapid7` tool | Execute SQL against DuckDB |
 | `vm export mcp schema` | MCP | `get_rapid7_schema` tool | Show DuckDB table schemas |
 | `vm export mcp stats` | MCP | `get_rapid7_stats` tool | Show summary statistics |
-| `vm export mcp list-exports` | MCP | `list_rapid7_exports` tool | List tracked exports |
+| `vm export mcp list-files` | MCP | `list_rapid7_exports` tool | List tracked exports and their Parquet file paths |
 | `vm export mcp suggest` | MCP | `suggest_query` tool | Get SQL query suggestions |
 | `vm export mcp load-parquet` | MCP | `load_rapid7_parquet` tool | Load local Parquet files |
 
@@ -233,7 +233,7 @@ r7-cli vm export mcp download --id <EXPORT_ID>
 r7-cli vm export mcp query "SELECT severity, COUNT(*) FROM vulnerabilities GROUP BY severity"
 r7-cli vm export mcp schema
 r7-cli vm export mcp stats
-r7-cli vm export mcp list-exports
+r7-cli vm export mcp list-files
 r7-cli vm export mcp suggest "find critical vulns with exploits"
 ```
 
