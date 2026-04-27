@@ -16,11 +16,11 @@ r7-cli is a CLI for the Rapid7 Command Platform. It wraps multiple security prod
 | `asm`        | Surface Command      | API key     | Cypher query language                       |
 | `drp`        | Digital Risk Prot.   | DRP token   | Separate token format (`user:key`)          |
 | `platform`   | Platform admin       | API key     | Cross-cutting: hosts `assets`, `extensions`, `compliance`, `matrix`, `status` subgroups |
-| `appsec`     | InsightAppSec        | API key     |                                             |
+| `appsec`     | InsightAppSec        | API key     | Full DAST lifecycle: apps, scans, configs, vulns, engines, reports |
 | `cnapp`      | InsightCloudSec      | API key     | Separate base URL (`insightcloudsec_url`)   |
-| `soar`       | InsightConnect       | API key     |                                             |
+| `soar`       | InsightConnect       | API key     | Workflows, jobs, artifacts, snippets, plugins |
 | `compliance` | VM policy pipeline   | API key     | Registered under `platform`                 |
-| `matrix`     | Coverage matrix      | none        | Offline NIST CSF × CIS v8 scoring           |
+| `matrix`     | Coverage matrix      | API key*    | NIST CSF × CIS v8 scoring; `--reality` needs API for deployment checks |
 | `status`     | Platform status      | none        | Fetches from status.rapid7.com, no auth     |
 | `extensions` | Extension Library    | none        | No auth required                            |
 
@@ -63,14 +63,25 @@ These are intentionally duplicated, not shared. Keep them private (underscore-pr
 
 Global flags must appear before the solution name on the command line. `GlobalFlagHintGroup` in `cli_group.py` enforces this and prints a corrective hint if violated.
 
-Key globals: `-r/--region`, `-k/--api-key`, `-o/--output`, `-v/--verbose`, `--debug`, `-c/--cache`, `-l/--limit`, `-s/--short`, `-t/--timeout`, `--search-fields`, `--drp-token`, `--llm`, `--llm-key`.
+Key globals: `-r/--region`, `-k/--api-key`, `-o/--output`, `-v/--verbose`, `--debug`, `-c/--cache`, `-l/--limit`, `-s/--short`, `-t/--timeout`, `--search-fields`, `--drp-token`, `--llm`, `--llm-key`, `--tldr`.
 
 ## Authentication & Licensing
 
 - Primary auth: `R7_X_API_KEY` env var or `-k` flag.
 - DRP uses a separate token: `R7_DRP_TOKEN` or `--drp-token`.
+- CloudSec uses a separate URL: `R7_CLOUDSEC_URL` or defaults to `my.insightcloudsec.com`.
 - License checking runs once per invocation (cached in `ctx.obj["_licensed_codes"]`). It maps solution names to product codes (e.g. `vm` → `IVM`). Unlicensed solutions exit with code 1.
 - License check is skipped for help requests, cache mode, and offline subcommands.
+
+| Solution | Required License Codes |
+|----------|----------------------|
+| vm | IVM |
+| siem | IDR or OPS |
+| asm | SC |
+| drp | TC or IH |
+| appsec | AS |
+| cnapp | ICS |
+| soar | ICON |
 
 ## Output Formats
 
@@ -122,6 +133,9 @@ VM exports (vulnerabilities, policies, remediations) produce Parquet files downl
 - `vm export list` operates offline on local Parquet files using `parquet_filter.py`.
 - `parquet_filter.py` handles file resolution, schema detection, typed filtering (`--where` clauses), and auto-join of asset data.
 - Export jobs are tracked in `~/.r7-cli/jobs.json` via `JobStore`.
+- String filters support glob patterns (`*`, `?`) via `fnmatch`.
+- `--only` option for column projection.
+- Policy-specific filters: `--benchmark-title`, `--profile-title`, `--publisher`, `--rule-title`, `--benchmark-version`.
 
 ## MCP Server Integration
 
@@ -132,6 +146,9 @@ The `vm export mcp` subgroup integrates the [Rapid7 Bulk Export MCP](https://git
 - `mcp start-export` / `mcp status` / `mcp download` — manage exports via MCP tools
 - `mcp query "SQL"` — execute SQL against the local DuckDB database
 - `mcp schema` / `mcp stats` / `mcp list-files` / `mcp suggest` — introspect loaded data
+- `mcp load-parquet` — load local Parquet files into DuckDB
+- `mcp clean` — kill stale MCP processes and optionally remove data
+- `mcp server setup` / `mcp server check` — setup and connectivity testing
 - The MCP server binary is `rapid7-mcp-server`; env vars `RAPID7_API_KEY` and `RAPID7_REGION` are passed from the CLI config
 
 ## Natural Language Commands (ai)
@@ -167,3 +184,4 @@ Supported regions: `us`, `us2`, `us3`, `ca`, `eu`, `au`, `ap`, `me-central-1`, `
 - All solution groups set `context_settings={"help_option_names": ["-h", "--help"]}`.
 - Credential values must never appear in logs. `R7Client` uses `_redact()` to strip API keys and tokens from verbose/debug output.
 - Imports of solution modules are lazy (inside `SolutionGroup.get_command()`). Do not add top-level imports for solution modules in `main.py`.
+- Progress output goes to stderr via `progress.py` utilities — never pollutes stdout.

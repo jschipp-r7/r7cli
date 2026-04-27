@@ -1,3 +1,7 @@
+---
+inclusion: always
+---
+
 # Tech Stack & Build
 
 ## Language & Runtime
@@ -34,6 +38,7 @@ pytest
 
 # Run CLI
 r7-cli --help
+r7-cli --tldr
 r7-cli <solution> <subcommand> [options]
 ```
 
@@ -50,6 +55,10 @@ r7-cli <solution> <subcommand> [options]
 - CIS/NIST CSF controls loaded from `controls.csv` (bundled as package data) by `cis.py`
 - Per-solution `cis` subcommand registered via `cis.make_cis_command()` in each solution module
 - `compliance` is a Click group (`invoke_without_command=True`): bare invocation runs export, `list` subcommand queries controls
+- `matrix` is a Click group with `matrix` (default) and `rapid7` (alias) subcommands; supports `--percent`, `--solution`, `--reality`, `--scoring`, `--json`
 - `ask` command (registered as `ai`) dynamically introspects the Click command tree to build LLM system prompts — no static spec to maintain
 - MCP integration (`solutions/mcp.py`) communicates with `rapid7-mcp-server` over stdio JSON-RPC; uses `subprocess.Popen` for lifecycle management
 - LLM calls use `httpx` directly (same HTTP library as the rest of the CLI) to call OpenAI, Anthropic, and Google Gemini APIs
+- `progress.py` provides ANSI progress bars, spinners, and pagination/download progress indicators (all output to stderr)
+- `status.py` fetches from status.rapid7.com Statuspage API (no auth required); renders human-readable or JSON output
+- License checking runs once per invocation (cached in `ctx.obj["_licensed_codes"]`); maps solution names to product codes; skipped for help, cache mode, and offline subcommands

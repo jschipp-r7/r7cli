@@ -258,3 +258,5 @@ Hypothesis is already listed in `[project.optional-dependencies] dev` in `pyproj
 - `compliance list` subcommand added for CIS/NIST CSF controls lookup via `cis.py`
 - `compliance list` supports product flags (`--vm`, `--siem`, `--asm`, `--drp`, `--appsec`, `--cnapp`, `--soar`, `--dspm`, `--grc`, `--patching`), IG filters (`--ig1`/`--ig2`/`--ig3`), `--csf` for NIST CSF framework, and `--other` for unmapped controls
 - Results include Solutions and Market Categories arrays from the CSV
+- `progress.py` module added for ANSI progress bars during export polling and download
+- SQL output format (`-o sql`) available across all commands via `format_output()`

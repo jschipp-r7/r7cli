@@ -185,12 +185,17 @@ _TLDR = f"""{_BANNER}
 {_H}InsightVM{_R}
   {_C}r7-cli vm health{_R}                                   {_G}# Print VM health info{_R}
   {_C}r7-cli vm scans list --days 7{_R}                      {_G}# List scans ran in last 7 days{_R}
+  {_C}r7-cli vm assets list --hostname 'web*' --all-pages{_R} {_G}# Search assets by hostname{_R}
+  {_C}r7-cli vm vulns list --severity Critical --all-pages{_R} {_G}# List critical vulns{_R}
   {_C}r7-cli vm export vulnerabilities --auto{_R}             {_G}# Bulk export all vulnerabilities{_R}
+  {_C}r7-cli vm export list --severity Critical{_R}           {_G}# Filter local Parquet exports{_R}
 
 {_H}InsightIDR / SIEM{_R}
   {_C}r7-cli siem health{_R}                                  {_G}# Print SIEM health info{_R}
+  {_C}r7-cli siem agents list --all-pages{_R}                 {_G}# List all agents via GraphQL{_R}
   {_C}r7-cli siem logs query -n "Asset Authentication" --time-range "Last 7 days"{_R}  {_G}# Query logs{_R}
   {_C}r7-cli siem investigations list --status OPEN --all-pages{_R}  {_G}# List all open investigations{_R}
+  {_C}r7-cli siem collectors list{_R}                         {_G}# List collectors{_R}
 
 {_H}Surface Command / ASM{_R}
   {_C}r7-cli asm queries list{_R}                            {_G}# List available queries{_R}
@@ -202,25 +207,55 @@ _TLDR = f"""{_BANNER}
   {_C}r7-cli drp alerts list --severity High --days 30{_R}   {_G}# List High severity DRP alerts{_R}
   {_C}r7-cli drp risk-score{_R}                              {_G}# Print organizational risk-score{_R}
 
+{_H}InsightAppSec{_R}
+  {_C}r7-cli appsec apps list{_R}                            {_G}# List applications{_R}
+  {_C}r7-cli appsec scans list --all-pages{_R}               {_G}# List all scans{_R}
+  {_C}r7-cli appsec vulns list --severity HIGH{_R}           {_G}# List high-severity vulns{_R}
+
+{_H}InsightCloudSec{_R}
+  {_C}r7-cli cnapp iac-scans list{_R}                        {_G}# List IaC scans{_R}
+  {_C}r7-cli cnapp aws-keys list{_R}                         {_G}# List AWS access keys{_R}
+  {_C}r7-cli cnapp findings list -j <ORG_SERVICE_ID>{_R}     {_G}# List findings{_R}
+
+{_H}InsightConnect / SOAR{_R}
+  {_C}r7-cli soar workflows list{_R}                         {_G}# List workflows{_R}
+  {_C}r7-cli soar jobs list --all-pages{_R}                  {_G}# List all jobs{_R}
+  {_C}r7-cli soar artifacts list{_R}                         {_G}# List global artifacts{_R}
+
 {_H}Platform{_R}
   {_C}r7-cli platform products list{_R}                      {_G}# List licensed platform products{_R}
   {_C}r7-cli platform users list{_R}                         {_G}# List platform users{_R}
-  {_C}r7-cli platform assets count{_R}                       {_G}# List licensed asset counts{_R}
+  {_C}r7-cli platform assets count{_R}                       {_G}# Cross-product asset counts{_R}
+  {_C}r7-cli platform status{_R}                             {_G}# Platform operational status{_R}
+  {_C}r7-cli platform extensions soar list{_R}               {_G}# Browse extension library{_R}
 
 {_H}Compliance & Coverage{_R}
   {_C}r7-cli platform compliance{_R}                          {_G}# SQL dump of VM policies{_R}
   {_C}r7-cli platform compliance list --vm{_R}                {_G}# CIS controls for InsightVM{_R}
-  {_C}r7-cli platform matrix rapid7 --reality{_R}             {_G}# coverage matrix adjusted for deployment{_R}
+  {_C}r7-cli platform matrix --reality{_R}                    {_G}# Coverage matrix adjusted for deployment{_R}
+  {_C}r7-cli platform matrix --percent{_R}                    {_G}# Coverage matrix with percentages{_R}
 
 {_H}CIS Controls (per product){_R}
   {_C}r7-cli vm cis --ig1{_R}                                 {_G}# IG1 controls for InsightVM{_R}
-  {_C}r7-cli siem cis{_R}                                     {_G}# all CIS controls for IDR{_R}
+  {_C}r7-cli siem cis{_R}                                     {_G}# All CIS controls for IDR{_R}
   {_C}r7-cli asm cis --csf{_R}                                {_G}# NIST CSF controls for ASM{_R}
 
+{_H}MCP Server (Bulk Export){_R}
+  {_C}r7-cli vm export mcp install{_R}                        {_G}# Install MCP server{_R}
+  {_C}r7-cli vm export mcp configure{_R}                      {_G}# Configure for AI tools{_R}
+  {_C}r7-cli vm export mcp query "SELECT * FROM vulnerabilities LIMIT 10"{_R}  {_G}# SQL query{_R}
+
+{_H}Natural Language (AI){_R}
+  {_C}r7-cli --llm openai ai show me critical vulnerabilities{_R}  {_G}# Translate to CLI command{_R}
+  {_C}r7-cli --llm claude ai -x list all open investigations{_R}   {_G}# Execute generated command{_R}
+
 {_H}Output Tricks{_R}
-  {_C}r7-cli -o table platform products list{_R}              {_G}# table format{_R}
-  {_C}r7-cli -s platform products list{_R}                    {_G}# compact one-liner JSON{_R}
-  {_C}r7-cli -c siem logs query -n "DNS Query"{_R}            {_G}# use cached response{_R}
+  {_C}r7-cli -o table platform products list{_R}              {_G}# Table format{_R}
+  {_C}r7-cli -s platform products list{_R}                    {_G}# Compact one-liner JSON{_R}
+  {_C}r7-cli -o csv vm scan-engines list{_R}                  {_G}# CSV export{_R}
+  {_C}r7-cli -l 5 vm scans list{_R}                           {_G}# Limit to 5 results{_R}
+  {_C}r7-cli --search-fields status vm scans list{_R}         {_G}# Search for field values{_R}
+  {_C}r7-cli -c siem logs query -n "DNS Query"{_R}            {_G}# Use cached response{_R}
 
 {_H}More help{_R}
   {_C}r7-cli SOLUTION --help{_R}                              {_G}# e.g. r7-cli vm --help{_R}
@@ -232,7 +267,7 @@ _TLDR = f"""{_BANNER}
 @click.option("-r", "--region", default=None, help="Region code (default: us).")
 @click.option("-v", "--verbose", is_flag=True, help="Log request/response info to stderr.")
 @click.option("-k", "--api-key", default=None, help="Insight Platform API key.")
-@click.option("-o", "--output", "output_format", default="json", help="Output format: json, table, csv, tsv.")
+@click.option("-o", "--output", "output_format", default="json", help="Output format: json, table, csv, tsv, sql.")
 @click.option("-c", "--cache", "use_cache", is_flag=True, help="Return last response from local cache (resp are saved), for faster testing.")
 @click.option("-l", "--limit", type=int, default=None, help="Limit the output of the largest array.")
 @click.option("--debug", is_flag=True, help="Log full request/response bodies to stderr.")
@@ -272,16 +307,23 @@ def cli(ctx, region, verbose, api_key, output_format, use_cache, limit, debug, d
 cli.help = (
     "\b\n"
     + _BANNER + "\n\n"
-    "Usage: r7-cli SOLUTION [OPTIONS] SUBCOMMAND [ARGS]\n\n"
+    "Usage: r7-cli [GLOBAL OPTIONS] SOLUTION SUBCOMMAND [ARGS]\n\n"
     "Solutions: siem, vm, cnapp, asm, appsec, drp, platform, soar\n\n"
     "\b\n"
     "Environment variables:\n"
-    "  R7_X_API_KEY   API key for Insight Platform\n"
-    "  R7_REGION      Region code (default: us)\n"
-    "  R7_DRP_TOKEN   DRP API token\n\n"
+    "  R7_X_API_KEY     API key for Insight Platform\n"
+    "  R7_REGION        Region code (default: us)\n"
+    "  R7_DRP_TOKEN     DRP API token\n"
+    "  R7_CLOUDSEC_URL  InsightCloudSec URL\n"
+    "  R7_LLM_PROVIDER  LLM provider (openai, claude, gemini)\n\n"
     "\b\n"
     "Supported regions:\n"
-    "  us, us1, us2, us3, ca, eu, au, ap, me-central-1, ap-south-2"
+    "  us, us1, us2, us3, ca, eu, au, ap, me-central-1, ap-south-2\n\n"
+    "\b\n"
+    "Quick start:\n"
+    "  r7-cli --tldr                    Show quick-reference examples\n"
+    "  r7-cli validate                  Validate your API key\n"
+    "  r7-cli SOLUTION --help           Show solution commands"
 )
 
 

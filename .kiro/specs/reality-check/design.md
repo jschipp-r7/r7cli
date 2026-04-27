@@ -312,3 +312,6 @@ Hypothesis is already available in the project's dev dependencies. Each property
 - `--scoring` flag added to print all scoring rules
 - `--json` flag added for JSON matrix output
 - `build_recommendations()` added for product recommendations
+- `matrix` is now a Click group: bare `r7-cli platform matrix` runs the matrix; `rapid7` is an alias subcommand
+- `_run_matrix()` internal function handles the shared logic between `matrix` and `rapid7` commands
+- `progress.py` module used for ANSI progress bars during deployment API checks

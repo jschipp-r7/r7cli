@@ -317,10 +317,12 @@ Use **Hypothesis** for property-based testing (already a standard Python PBT lib
 
 ## Post-Implementation Changes
 
-- Command available as `r7-cli siem agents list` (also `r7-cli platform assets list` via `agents.py` for cross-solution view)
+- Command available as `r7-cli siem agents list` (also `r7-cli platform assets count` via `agents.py` for cross-solution view)
 - GQL query simplified: removed host, endpointPrevention, bootstrap fields; now uses agent (id, agentStatus, agentSemanticVersion, deployTime, agentLastUpdateTime), publicIpAddress, platform
 - `--ngav-status` and `--velociraptor-status` filters removed
 - `-l/--limit` renamed to `--size` to avoid conflict with global `-l`
 - `siem agents count` subcommand added for total SIEM agent count
 - `platform assets count` subcommand added with `--vm`, `--siem`, `--asm`, `--appsec`, `--drp` options
-- Org ID resolution via `_resolve_org_id` helper
+- Org ID resolution via `_resolve_org_id` helper shared with other SIEM GraphQL commands
+- `_flatten_agent_node` simplified to match reduced GQL response shape
+- `_ms_to_human` helper added for human-readable time formatting in health metrics

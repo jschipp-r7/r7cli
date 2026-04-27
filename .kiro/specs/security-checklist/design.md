@@ -272,3 +272,6 @@ Hypothesis is already listed in `[project.optional-dependencies] dev` in `pyproj
 - `build_recommendations()` function added for product recommendations
 - Backward-compat alias `security_checklist = matrix` removed
 - Per-solution `cis` subcommand added to every solution group via `cis.make_cis_command()` — lists CIS/NIST CSF controls from `controls.csv` with product, IG, and framework filters
+- `matrix` is now a Click group: bare `r7-cli platform matrix` runs the matrix; `rapid7` is an alias subcommand
+- `check_deployments()` expanded beyond original 5 checks: event sources, stale agents, active workflows, SC connectors
+- `progress.py` module added for ANSI progress bars during deployment checks

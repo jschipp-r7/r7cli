@@ -239,3 +239,5 @@ Each property test runs a minimum of 100 iterations and is tagged with:
 - Schema detection uses `path.resolve()` for absolute paths
 - Only most recent file per schema is used (avoids duplicates)
 - Asset column validation for `--only` option
+- `progress.py` module used for download progress indicators
+- `vm export schema` subcommand added to inspect export schemas without downloading
