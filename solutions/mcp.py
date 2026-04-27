@@ -60,8 +60,11 @@ def _log_debug(config: Config, msg: str) -> None:
 
 
 def _find_mcp_server() -> str | None:
-    """Return the path to the rapid7-mcp-server binary, or None."""
-    return shutil.which(_MCP_SERVER_CMD)
+    """Return the absolute path to the rapid7-mcp-server binary, or None."""
+    path = shutil.which(_MCP_SERVER_CMD)
+    if path:
+        return str(Path(path).resolve())
+    return None
 
 
 def _run_mcp_stdio(config: Config, request: dict) -> dict:
@@ -96,12 +99,22 @@ def _run_mcp_stdio(config: Config, request: dict) -> dict:
     # so the default 30s global timeout doesn't choke slow MCP operations.
     tool_timeout = max(config.timeout, _MCP_TOOL_TIMEOUT) if config.timeout else _MCP_TOOL_TIMEOUT
 
+    # Run the MCP server in ~/.rapid7-mcp/ so its DuckDB databases don't
+    # conflict with a Kiro-managed MCP server instance that may already be
+    # running in the workspace directory.  Both use relative paths for
+    # rapid7_bulk_export.db and rapid7_bulk_export_tracking.db, so running
+    # in separate directories avoids DuckDB exclusive-lock contention.
+    data_dir = _MCP_DATA_DIR
+    data_dir.mkdir(parents=True, exist_ok=True)
+    _log_debug(config, f"Working directory: {data_dir}")
+
     proc = subprocess.Popen(
         [server_cmd],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         env=env,
+        cwd=str(data_dir),
         text=True,
     )
 
@@ -173,17 +186,20 @@ def _run_mcp_stdio(config: Config, request: dict) -> dict:
 
 
 def _drain_stderr(proc: subprocess.Popen, config: Config) -> None:
-    """Read any available stderr from the process and log it."""
+    """Read any available stderr from the process without blocking."""
+    if not config.debug or not proc.stderr:
+        return
     try:
-        # Non-blocking read of stderr
         import select
-        if hasattr(select, "select") and proc.stderr:
-            ready, _, _ = select.select([proc.stderr], [], [], 0.1)
+        # Check if stderr has data available (non-blocking)
+        if hasattr(select, "select"):
+            ready, _, _ = select.select([proc.stderr.buffer], [], [], 0.1)
             if ready:
-                stderr_output = proc.stderr.read()
-                if stderr_output and stderr_output.strip():
-                    _log_debug(config, f"Server stderr: {stderr_output.strip()}")
-    except (OSError, ValueError):
+                # Read raw bytes that are immediately available
+                data = proc.stderr.buffer.read1(4096)
+                if data:
+                    _log_debug(config, f"Server stderr: {data.decode('utf-8', errors='replace').strip()}")
+    except (OSError, ValueError, AttributeError):
         pass
 
 
@@ -206,6 +222,9 @@ def _read_response(proc: subprocess.Popen, config: Config, timeout: int = _MCP_R
     timeout enforcement in the main thread.  This avoids select()+read(1)
     issues with Python TextIOWrapper buffering on macOS.
 
+    IMPORTANT: This function uses a shared reader thread stored on the
+    process object to avoid multiple threads competing for stdout lines.
+
     Raises TimeoutError if no response is received within the timeout period.
     """
     import queue
@@ -214,68 +233,70 @@ def _read_response(proc: subprocess.Popen, config: Config, timeout: int = _MCP_R
     deadline = time.monotonic() + timeout
     _log_debug(config, f"← Waiting for response (timeout: {timeout}s)…")
 
-    # Use a thread to do blocking readline — avoids select/buffering issues
-    line_queue: queue.Queue[str | None] = queue.Queue()
+    # Reuse a single reader thread per process to avoid multiple threads
+    # competing for stdout lines.  The thread and queue are stored as
+    # attributes on the process object.
+    if not hasattr(proc, "_mcp_line_queue"):
+        line_queue: queue.Queue[str | None] = queue.Queue()
+        proc._mcp_line_queue = line_queue  # type: ignore[attr-defined]
 
-    def _reader():
-        try:
-            while True:
-                line = proc.stdout.readline()
-                line_queue.put(line)
-                if line == "":  # EOF
-                    break
-        except (OSError, ValueError):
-            line_queue.put(None)
-
-    reader_thread = threading.Thread(target=_reader, daemon=True)
-    reader_thread.start()
-
-    try:
-        while True:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                raise TimeoutError(f"Timed out waiting for MCP response after {timeout}s")
-
+        def _reader():
             try:
-                line = line_queue.get(timeout=min(remaining, 1.0))
-            except queue.Empty:
-                # Check if process is still alive
-                if proc.poll() is not None:
-                    stderr_output = proc.stderr.read() if proc.stderr else ""
-                    raise R7Error(
-                        f"MCP server exited unexpectedly (code {proc.returncode}). "
-                        f"stderr: {stderr_output.strip() or '(empty)'}",
-                        exit_code=2,
-                    )
-                continue
+                while True:
+                    line = proc.stdout.readline()
+                    line_queue.put(line)
+                    if line == "":  # EOF
+                        break
+            except (OSError, ValueError):
+                line_queue.put(None)
 
-            if line is None or line == "":
+        reader_thread = threading.Thread(target=_reader, daemon=True)
+        reader_thread.start()
+
+    line_queue = proc._mcp_line_queue  # type: ignore[attr-defined]
+
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError(f"Timed out waiting for MCP response after {timeout}s")
+
+        try:
+            line = line_queue.get(timeout=min(remaining, 1.0))
+        except queue.Empty:
+            # Check if process is still alive
+            if proc.poll() is not None:
                 stderr_output = proc.stderr.read() if proc.stderr else ""
                 raise R7Error(
-                    f"MCP server closed unexpectedly. stderr: {stderr_output.strip() or '(empty)'}",
+                    f"MCP server exited unexpectedly (code {proc.returncode}). "
+                    f"stderr: {stderr_output.strip() or '(empty)'}",
                     exit_code=2,
                 )
+            continue
 
-            line = line.strip()
-            if not line:
-                continue
+        if line is None or line == "":
+            stderr_output = proc.stderr.read() if proc.stderr else ""
+            raise R7Error(
+                f"MCP server closed unexpectedly. stderr: {stderr_output.strip() or '(empty)'}",
+                exit_code=2,
+            )
 
-            try:
-                msg = json.loads(line)
-            except json.JSONDecodeError:
-                _log_debug(config, f"← Skipping non-JSON line: {line[:120]}")
-                continue
+        line = line.strip()
+        if not line:
+            continue
 
-            # Skip notifications (no "id" field) — only return responses
-            if "id" in msg:
-                _log_debug(config, f"← Received response for id={msg['id']}")
-                return msg
-            else:
-                _log_debug(config, f"← Skipping notification: method={msg.get('method', 'N/A')}")
-                continue
-    finally:
-        # Thread is daemon, will die when process terminates
-        pass
+        try:
+            msg = json.loads(line)
+        except json.JSONDecodeError:
+            _log_debug(config, f"← Skipping non-JSON line: {line[:120]}")
+            continue
+
+        # Skip notifications (no "id" field) — only return responses
+        if "id" in msg:
+            _log_debug(config, f"← Received response for id={msg['id']}")
+            return msg
+        else:
+            _log_debug(config, f"← Skipping notification: method={msg.get('method', 'N/A')}")
+            continue
 
 
 def _call_tool(config: Config, tool_name: str, arguments: dict | None = None) -> str:
@@ -508,6 +529,11 @@ def _run_connectivity_test(config: Config, server_cmd: str) -> None:
         env["RAPID7_REGION"] = config.region
         env["PYTHONUNBUFFERED"] = "1"
 
+        # Use ~/.rapid7-mcp/ as cwd to avoid DuckDB lock conflicts with
+        # any Kiro-managed MCP server running in the workspace directory.
+        data_dir = _MCP_DATA_DIR
+        data_dir.mkdir(parents=True, exist_ok=True)
+
         _log_verbose(config, f"Spawning: {server_cmd}")
 
         proc = subprocess.Popen(
@@ -516,6 +542,7 @@ def _run_connectivity_test(config: Config, server_cmd: str) -> None:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             env=env,
+            cwd=str(data_dir),
             text=True,
         )
 
@@ -1179,7 +1206,8 @@ def _kill_stale_mcp_processes(config: Config, yes: bool = False) -> None:
     if not pids:
         tracking_db = Path("rapid7_bulk_export_tracking.db").resolve()
         data_dir_db = _MCP_DATA_DIR / "rapid7_bulk_export.db"
-        for db_path in [tracking_db, data_dir_db]:
+        data_dir_tracking_db = _MCP_DATA_DIR / "rapid7_bulk_export_tracking.db"
+        for db_path in [tracking_db, data_dir_db, data_dir_tracking_db]:
             if not db_path.exists():
                 continue
             try:
