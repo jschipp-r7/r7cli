@@ -84,6 +84,9 @@ def _run_mcp_stdio(config: Config, request: dict) -> dict:
     if config.api_key:
         env["RAPID7_API_KEY"] = config.api_key
     env["RAPID7_REGION"] = config.region
+    # Force unbuffered stdout in the child Python process so JSON-RPC
+    # responses are flushed immediately through the pipe.
+    env["PYTHONUNBUFFERED"] = "1"
 
     _log_debug(config, f"Region: {config.region}")
     _log_debug(config, f"API key: {'set (' + config.api_key[:4] + '…)' if config.api_key else 'NOT SET'}")
@@ -503,6 +506,7 @@ def _run_connectivity_test(config: Config, server_cmd: str) -> None:
         if config.api_key:
             env["RAPID7_API_KEY"] = config.api_key
         env["RAPID7_REGION"] = config.region
+        env["PYTHONUNBUFFERED"] = "1"
 
         _log_verbose(config, f"Spawning: {server_cmd}")
 
