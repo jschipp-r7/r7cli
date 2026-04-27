@@ -29,7 +29,21 @@ class JobStore:
 
     def _save(self, entries: list[dict]) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._path.write_text(json.dumps(entries, indent=2), encoding="utf-8")
+        import tempfile
+        # Atomic write: write to temp file then rename (atomic on POSIX)
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            dir=self._path.parent,
+            suffix=".tmp",
+            delete=False,
+            encoding="utf-8",
+        ) as tmp:
+            json.dump(entries, tmp, indent=2)
+            tmp.flush()
+            import os
+            os.fsync(tmp.fileno())
+            tmp_path = Path(tmp.name)
+        tmp_path.replace(self._path)
 
     # -- public API ---------------------------------------------------------
 

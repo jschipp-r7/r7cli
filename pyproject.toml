@@ -26,7 +26,7 @@ r7-cli = "r7cli.main:cli"
 
 [tool.setuptools]
 packages = ["r7cli", "r7cli.solutions"]
-package-data = {"r7cli" = ["controls.csv", "product-market.mappings"]}
+package-data = {"r7cli" = ["controls.csv", "product-market.mappings", "py.typed"]}
 
 [tool.setuptools.package-dir]
 r7cli = "src/r7cli"

@@ -68,13 +68,22 @@ def extract_item_id(item: dict) -> str:
 def resolve_body(data_str: str | None, data_file: str | None) -> dict | None:
     """Parse a JSON body from ``--data`` or ``--data-file``.
 
-    Raises :class:`UserInputError` if both are provided.
+    Raises :class:`UserInputError` if both are provided or if the file
+    exceeds 10 MB.
     """
+    _MAX_BODY_SIZE = 10 * 1024 * 1024  # 10 MB
+
     if data_str and data_file:
         raise UserInputError("Provide either --data or --data-file, not both.")
     if data_str:
         return json.loads(data_str)
     if data_file:
+        from pathlib import Path
+        size = Path(data_file).stat().st_size
+        if size > _MAX_BODY_SIZE:
+            raise UserInputError(
+                f"File too large ({size:,} bytes). Maximum is {_MAX_BODY_SIZE // (1024 * 1024)} MB."
+            )
         with open(data_file) as fh:
             return json.load(fh)
     return None
