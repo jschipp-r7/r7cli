@@ -116,21 +116,31 @@ def apply_limit(data: Any, n: int) -> Any:
 def format_output(data: Any, fmt: str, limit: int | None = None, search: str | None = None, short: bool = False) -> str:
     """Serialize *data* to the requested format string.
 
+    This is the single output path for all CLI commands. Every command
+    calls ``format_output()`` (or the ``emit()`` shorthand) rather than
+    formatting data directly.
+
     Parameters
     ----------
-    data:
+    data : Any
         The structured data to format (dict, list of dicts, etc.).
-    fmt:
-        One of ``"json"``, ``"table"``, ``"csv"``.
-    limit:
+    fmt : str
+        One of ``"json"``, ``"table"``, ``"csv"``, ``"tsv"``, ``"sql"``.
+    limit : int, optional
         If set, truncate the largest top-level array to this many items
         before formatting.
-    search:
-        If set, search the data for this field name and return matching values
-        instead of the full output.
-    short:
-        If True and fmt is ``"json"`` and search is None, use compact
-        single-line-per-row output with field reordering and truncation.
+    search : str, optional
+        If set, search the data for this field name and return matching
+        values instead of the full output.
+    short : bool
+        If True and *fmt* is ``"json"`` and *search* is None, use compact
+        single-line-per-row output with field reordering and terminal-width
+        truncation.
+
+    Returns
+    -------
+    str
+        The formatted output string, ready for ``click.echo()``.
     """
     if limit is not None:
         data = apply_limit(data, limit)

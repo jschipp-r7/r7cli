@@ -7,8 +7,9 @@ from __future__ import annotations
 
 import hashlib
 import json
-import sys
 from pathlib import Path
+
+from r7cli.log import logger
 
 
 CACHE_DIR = Path.home() / ".r7-cli" / "cache"
@@ -47,4 +48,4 @@ class CacheStore:
             self.CACHE_DIR.mkdir(parents=True, exist_ok=True)
             path.write_text(json.dumps(body), encoding="utf-8")
         except OSError as exc:
-            print(f"Warning: failed to write cache file {path}: {exc}", file=sys.stderr)
+            logger.warning("Failed to write cache file %s: %s", path, exc)

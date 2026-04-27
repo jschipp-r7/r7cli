@@ -13,6 +13,7 @@ from tabulate import tabulate
 
 from r7cli.client import R7Client
 from r7cli.config import Config
+from r7cli.log import logger
 from r7cli.models import ACCOUNT_BASE, IDR_V1_BASE, IVM_V4_BASE, SC_BASE, APIError, R7Error
 
 # ---------------------------------------------------------------------------
@@ -457,7 +458,7 @@ def check_deployments(client: R7Client, config: Config) -> dict[str, bool]:
         elif isinstance(resp, list):
             status["scan_engines"] = len(resp) > 0
     except R7Error as exc:
-        print(f"Warning: scan engine check failed: {exc}", file=sys.stderr)
+        logger.warning("scan engine check failed: %s", exc)
 
     # IDR health-metrics checks
     idr_components = ["collectors", "network_sensors", "honeypots", "orchestrator"]
@@ -477,7 +478,7 @@ def check_deployments(client: R7Client, config: Config) -> dict[str, bool]:
                         break
                 status[component] = has_items
         except R7Error as exc:
-            print(f"Warning: {component} check failed: {exc}", file=sys.stderr)
+            logger.warning("{component} check failed: %s", exc)
 
     # Surface Command connectors check
     try:
@@ -501,7 +502,7 @@ def check_deployments(client: R7Client, config: Config) -> dict[str, bool]:
                 count += 1
         status["sc_connectors"] = count >= _SC_CONNECTOR_MIN
     except R7Error as exc:
-        print(f"Warning: Surface Command connector check failed: {exc}", file=sys.stderr)
+        logger.warning("Surface Command connector check failed: %s", exc)
 
     # Event sources check
     try:
@@ -518,7 +519,7 @@ def check_deployments(client: R7Client, config: Config) -> dict[str, bool]:
         status["no_event_sources"] = es_count > 0
         status["few_event_sources"] = es_count >= 5
     except R7Error as exc:
-        print(f"Warning: event sources check failed: {exc}", file=sys.stderr)
+        logger.warning("event sources check failed: %s", exc)
 
     # Stale/offline agents check
     try:
@@ -540,7 +541,7 @@ def check_deployments(client: R7Client, config: Config) -> dict[str, bool]:
                     status["stale_offline_agents"] = unhealthy_pct < 10
                 break
     except R7Error as exc:
-        print(f"Warning: agent health check failed: {exc}", file=sys.stderr)
+        logger.warning("agent health check failed: %s", exc)
 
     # Active workflows check (InsightConnect)
     try:
@@ -561,7 +562,7 @@ def check_deployments(client: R7Client, config: Config) -> dict[str, bool]:
             workflows = resp
         status["no_active_workflows"] = len(workflows) > 0
     except R7Error as exc:
-        print(f"Warning: active workflows check failed: {exc}", file=sys.stderr)
+        logger.warning("active workflows check failed: %s", exc)
 
     return status
 

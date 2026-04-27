@@ -51,13 +51,49 @@ def resolve_config(
     llm_provider_flag: Optional[str] = None,
     llm_api_key_flag: Optional[str] = None,
 ) -> Config:
-    """Build a :class:`Config` by merging flags, env vars, and defaults.
+    """Merge CLI flags, environment variables, and defaults into a Config.
 
-    Raises :class:`UserInputError` when the resolved region is not in
-    :data:`VALID_REGIONS`.
+    Resolution priority for each setting: CLI flag → env var → default.
 
-    Does **not** raise for a missing API key — that check is deferred to
-    individual commands that require it.
+    Parameters
+    ----------
+    region_flag : str, optional
+        Region override from ``-r`` / ``--region``.
+    api_key_flag : str, optional
+        API key from ``-k`` / ``--api-key``.
+    drp_token_flag : str, optional
+        DRP token from ``--drp-token``.
+    verbose : bool
+        Enable INFO-level logging (``-v``).
+    debug : bool
+        Enable DEBUG-level logging (``--debug``).
+    output_format : str
+        Output format: ``json``, ``table``, ``csv``, ``tsv``, ``sql``.
+    use_cache : bool
+        Serve responses from local cache (``-c``).
+    limit : int, optional
+        Truncate the largest array in output (``-l``).
+    timeout : int
+        HTTP request timeout in seconds (``-t``).
+    search : str, optional
+        Field name to search for in JSON responses (``--search-fields``).
+    short : bool
+        Compact single-line output mode (``-s``).
+    llm_provider_flag : str, optional
+        LLM provider name (``--llm``).
+    llm_api_key_flag : str, optional
+        LLM API key (``--llm-key``).
+
+    Returns
+    -------
+    Config
+        Fully resolved runtime configuration.
+
+    Raises
+    ------
+    UserInputError
+        If the resolved region is not in ``VALID_REGIONS`` or the output
+        format is not in ``VALID_OUTPUT_FORMATS``.
     """
 
     # --- region: flag → env → default "us" ---

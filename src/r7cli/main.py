@@ -299,6 +299,15 @@ def cli(ctx, region, verbose, api_key, output_format, use_cache, limit, debug, d
             llm_api_key_flag=llm_api_key,
         )
         ctx.obj["config"] = config
+
+        # Initialize logging with resolved config
+        from r7cli.log import configure_logging
+        configure_logging(
+            verbose=config.verbose,
+            debug=config.debug,
+            api_key=config.api_key,
+            drp_token=config.drp_token,
+        )
     except R7Error as exc:
         click.echo(str(exc), err=True)
         sys.exit(exc.exit_code)

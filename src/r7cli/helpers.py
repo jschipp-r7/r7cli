@@ -24,7 +24,19 @@ from r7cli.output import format_output
 # ---------------------------------------------------------------------------
 
 def get_config(ctx: click.Context) -> Config:
-    """Extract the resolved :class:`Config` from the Click context."""
+    """Extract the resolved Config from the Click context.
+
+    Parameters
+    ----------
+    ctx : click.Context
+        The Click context object, expected to have ``obj["config"]`` set
+        by the top-level CLI callback.
+
+    Returns
+    -------
+    Config
+        The resolved runtime configuration.
+    """
     return ctx.obj["config"]
 
 
@@ -33,7 +45,21 @@ def get_config(ctx: click.Context) -> Config:
 # ---------------------------------------------------------------------------
 
 def extract_items(data: Any) -> list[dict]:
-    """Find the largest list of dicts in *data* (recursive)."""
+    """Find the largest list of dicts in *data* (recursive).
+
+    Useful for normalizing API responses that wrap result arrays under
+    varying key names (``data``, ``resources``, ``items``, etc.).
+
+    Parameters
+    ----------
+    data : Any
+        The API response — typically a dict or list.
+
+    Returns
+    -------
+    list[dict]
+        The largest list of dicts found, or an empty list.
+    """
     if isinstance(data, list):
         if data and isinstance(data[0], dict):
             return data
@@ -68,8 +94,24 @@ def extract_item_id(item: dict) -> str:
 def resolve_body(data_str: str | None, data_file: str | None) -> dict | None:
     """Parse a JSON body from ``--data`` or ``--data-file``.
 
-    Raises :class:`UserInputError` if both are provided or if the file
-    exceeds 10 MB.
+    Parameters
+    ----------
+    data_str : str or None
+        Inline JSON string from the ``--data`` flag.
+    data_file : str or None
+        Path to a JSON file from the ``--data-file`` flag.
+
+    Returns
+    -------
+    dict or None
+        Parsed JSON body, or None if neither argument was provided.
+
+    Raises
+    ------
+    UserInputError
+        If both arguments are provided, or if the file exceeds 10 MB.
+    json.JSONDecodeError
+        If the JSON is malformed.
     """
     _MAX_BODY_SIZE = 10 * 1024 * 1024  # 10 MB
 

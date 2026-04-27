@@ -5,7 +5,6 @@ credential redaction, caching, rate-limit retry, and typed error mapping.
 """
 from __future__ import annotations
 
-import re
 import sys
 import time
 from typing import Any
@@ -14,28 +13,8 @@ import httpx
 
 from r7cli.cache import CacheStore, cache_key
 from r7cli.config import Config
+from r7cli.log import logger
 from r7cli.models import APIError, NetworkError
-
-
-_REDACT_RE: re.Pattern[str] | None = None
-
-
-def _build_redact_pattern(config: Config) -> re.Pattern[str] | None:
-    """Compile a regex that matches literal api_key or drp_token values."""
-    literals = []
-    if config.api_key:
-        literals.append(re.escape(config.api_key))
-    if config.drp_token:
-        literals.append(re.escape(config.drp_token))
-    if not literals:
-        return None
-    return re.compile("|".join(literals))
-
-
-def _redact(text: str, pattern: re.Pattern[str] | None) -> str:
-    if pattern is None:
-        return text
-    return pattern.sub("[REDACTED]", text)
 
 
 class R7Client:
@@ -45,7 +24,6 @@ class R7Client:
         self.config = config
         self._http = httpx.Client(timeout=float(config.timeout))
         self._cache = CacheStore()
-        self._redact_re = _build_redact_pattern(config)
         self._license_checked: set[str] = set()  # solutions already checked
 
     # -- convenience methods ------------------------------------------------
@@ -75,7 +53,39 @@ class R7Client:
     ) -> dict:
         """Send an HTTP request with all cross-cutting concerns applied.
 
-        Returns the parsed JSON response body as a dict.
+        Handles license checking, response caching, verbose/debug logging,
+        rate-limit retry with exponential backoff, and typed error mapping.
+
+        Parameters
+        ----------
+        method : str
+            HTTP method (``GET``, ``POST``, ``HEAD``, ``DELETE``, etc.).
+        url : str
+            Fully qualified URL.
+        json : dict, optional
+            JSON request body.
+        params : dict, optional
+            URL query parameters.
+        auth : tuple, optional
+            HTTP Basic auth ``(username, password)`` tuple.
+        headers : dict, optional
+            Additional headers to merge with the default auth headers.
+        solution : str
+            Solution name for cache keying and license checking.
+        subcommand : str
+            Subcommand name for cache keying.
+
+        Returns
+        -------
+        dict
+            Parsed JSON response body.
+
+        Raises
+        ------
+        APIError
+            On HTTP 4xx/5xx responses.
+        NetworkError
+            On connection failures or timeouts.
         """
         # -- license check (lazy, once per solution) ------------------------
         if solution and solution not in self._license_checked and solution != "platform":
@@ -89,13 +99,12 @@ class R7Client:
             cached = self._cache.read(ck)
             if cached is not None:
                 cache_path = self._cache.CACHE_DIR / f"{ck}.json"
-                if self.config.debug:
-                    self._log(f"Cache hit: {cache_path}")
+                logger.debug("Cache hit: %s", cache_path)
                 return cached
             else:
                 if self.config.debug:
                     cache_path = self._cache.CACHE_DIR / f"{ck}.json"
-                    self._log(f"No cache file found: {cache_path}")
+                    logger.debug("No cache file found: %s", cache_path)
 
         # -- build merged headers -------------------------------------------
         merged_headers = {
@@ -109,46 +118,49 @@ class R7Client:
         if self.config.verbose:
             if params:
                 from urllib.parse import urlencode
-                self._log(f"{method} {url}?{urlencode(params)}")
+                logger.info("%s %s?%s", method, url, urlencode(params))
             else:
-                self._log(f"{method} {url}")
+                logger.info("%s %s", method, url)
 
         # -- debug: log request body ----------------------------------------
         if self.config.debug and json is not None:
             import json as _json
-            self._log(f">>> {_json.dumps(json)}")
+            logger.debug(">>> %s", _json.dumps(json))
 
         # -- debug: print equivalent curl command ---------------------------
         if self.config.debug:
             curl_cmd = self._build_curl(method, url, merged_headers, json, params, auth)
-            self._log(f"Example cURL: {curl_cmd}")
+            logger.debug("Example cURL: %s", curl_cmd)
 
         # -- execute --------------------------------------------------------
         response = self._send(method, url, json=json, params=params,
                               auth=auth, headers=merged_headers)
 
-        # -- handle 429 rate-limit (retry once) -----------------------------
-        if response.status_code == 429:
+        # -- handle 429 rate-limit with exponential backoff -----------------
+        max_retries = 3
+        for attempt in range(max_retries):
+            if response.status_code != 429:
+                break
             reset = response.headers.get("X-RateLimit-Reset")
             if reset:
                 try:
                     sleep_secs = int(reset)
                 except ValueError:
-                    sleep_secs = 1
-                if self.config.verbose:
-                    self._log(f"Rate limited — sleeping {sleep_secs}s")
-                time.sleep(sleep_secs)
+                    sleep_secs = 2 ** attempt
+            else:
+                sleep_secs = min(2 ** attempt, 60)
+            logger.info("Rate limited (429) — retry %d/%d, sleeping %ds",
+                        attempt + 1, max_retries, sleep_secs)
+            time.sleep(sleep_secs)
             response = self._send(method, url, json=json, params=params,
                                   auth=auth, headers=merged_headers)
 
         # -- verbose: log response ------------------------------------------
         elapsed_ms = int(response.elapsed.total_seconds() * 1000)
-        if self.config.verbose:
-            self._log(f"{response.status_code} {response.reason_phrase} {elapsed_ms}ms")
+        logger.info("%s %s %dms", response.status_code, response.reason_phrase, elapsed_ms)
 
         # -- debug: log response body ---------------------------------------
-        if self.config.debug:
-            self._log(f"<<< {response.text}")
+        logger.debug("<<< %s", response.text)
 
         # -- raise on HTTP errors -------------------------------------------
         try:
@@ -262,19 +274,15 @@ class R7Client:
                     "cnapp": "InsightCloudSec", "soar": "InsightConnect",
                 }
                 friendly = _FRIENDLY.get(solution, solution)
-                print(
-                    f"Error: your organization is not licensed for {friendly}. "
-                    f"This command requires one of the following product licenses: {', '.join(required_codes)}.\n"
-                    f"Check your licensed products with: r7-cli platform products list",
-                    file=sys.stderr,
+                logger.error(
+                    "Your organization is not licensed for %s. "
+                    "This command requires one of: %s.\n"
+                    "Check your licensed products with: r7-cli platform products list",
+                    friendly, ", ".join(required_codes),
                 )
                 sys.exit(1)
         except Exception:
             pass  # fail open on any error
-
-    def _log(self, msg: str) -> None:
-        """Print *msg* to stderr with credential redaction."""
-        print(_redact(msg, self._redact_re), file=sys.stderr)
 
     def _build_curl(
         self,
