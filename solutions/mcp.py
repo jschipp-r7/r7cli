@@ -1088,29 +1088,6 @@ def mcp_list_exports(ctx, limit):
         sys.exit(exc.exit_code)
 
 
-# ---------------------------------------------------------------------------
-# mcp suggest
-# ---------------------------------------------------------------------------
-
-@mcp_group.command("suggest")
-@click.argument("task", default="")
-@click.pass_context
-def mcp_suggest(ctx, task):
-    """Get SQL query suggestions for common analysis tasks.
-
-    \b
-    Examples:
-      r7-cli vm export mcp suggest
-      r7-cli vm export mcp suggest "find critical vulns with exploits"
-    """
-    config = _get_config(ctx)
-    try:
-        result = _call_tool(config, "suggest_query", {"task": task})
-        click.echo(result)
-    except R7Error as exc:
-        click.echo(str(exc), err=True)
-        sys.exit(exc.exit_code)
-
 
 # ---------------------------------------------------------------------------
 # mcp load-parquet
