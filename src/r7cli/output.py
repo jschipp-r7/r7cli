@@ -156,6 +156,8 @@ def format_output(data: Any, fmt: str, limit: int | None = None, search: str | N
         return json.dumps(data, indent=2)
 
     if fmt == "table":
+        if short:
+            return _format_table_short(data, shutil.get_terminal_size().columns)
         return _format_table(data)
 
     if fmt == "csv":
@@ -180,6 +182,67 @@ def _format_table(data: Any) -> str:
     if isinstance(rows[0], dict):
         return tabulate(rows, headers="keys", tablefmt="grid")
     return tabulate(rows, tablefmt="grid")
+
+
+def _format_table_short(data: Any, terminal_width: int) -> str:
+    """Render *data* as a compact table with columns truncated to fit the terminal.
+
+    Distributes the available width across columns proportionally, giving
+    more space to columns with longer content. Each cell value is truncated
+    with ``…`` if it exceeds its allocated width.
+    """
+    rows = _extract_rows(data)
+    if not rows:
+        return ""
+    if not isinstance(rows[0], dict):
+        return tabulate(rows, tablefmt="grid")
+
+    headers = list(rows[0].keys())
+    num_cols = len(headers)
+    if num_cols == 0:
+        return ""
+
+    # Calculate the max content width per column (header + all rows)
+    max_widths: list[int] = []
+    for h in headers:
+        col_max = len(h)
+        for row in rows:
+            val = str(row.get(h, ""))
+            col_max = max(col_max, len(val))
+        max_widths.append(col_max)
+
+    # Grid table overhead: "| " + " | " between cols + " |" = 3*num_cols + 1
+    overhead = 3 * num_cols + 1
+    available = max(terminal_width - overhead, num_cols * 4)  # at least 4 chars per col
+
+    # Distribute available width proportionally to natural column widths
+    total_natural = sum(max_widths) or 1
+    col_widths: list[int] = []
+    for w in max_widths:
+        allocated = max(int(available * w / total_natural), 4)
+        col_widths.append(allocated)
+
+    # Truncate cell values
+    truncated_rows: list[dict[str, str]] = []
+    for row in rows:
+        new_row: dict[str, str] = {}
+        for h, cw in zip(headers, col_widths):
+            val = str(row.get(h, ""))
+            if len(val) > cw:
+                val = val[: cw - 1] + "…"
+            new_row[h] = val
+        truncated_rows.append(new_row)
+
+    # Also truncate headers
+    short_headers: list[str] = []
+    for h, cw in zip(headers, col_widths):
+        if len(h) > cw:
+            h = h[: cw - 1] + "…"
+        short_headers.append(h)
+
+    # Build rows as lists matching the (possibly truncated) header order
+    table_rows = [[row[h] for h in headers] for row in truncated_rows]
+    return tabulate(table_rows, headers=short_headers, tablefmt="grid")
 
 
 def _format_csv(data: Any) -> str:
