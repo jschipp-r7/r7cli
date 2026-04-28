@@ -842,6 +842,113 @@ r7cli/                     # Package root (workspace root)
 └── pyproject.toml
 ```
 
+## Public API Documentation
+
+Links to the official Rapid7 API documentation for each product and service that r7-cli wraps.
+
+### Insight Platform (shared)
+
+| Resource | URL |
+|----------|-----|
+| Platform API Overview | [docs.rapid7.com/insight/api-overview](https://docs.rapid7.com/insight/api-overview/) |
+| Product APIs Index | [docs.rapid7.com/insight/product-apis](https://docs.rapid7.com/insight/product-apis/) |
+| Managing API Keys | [docs.rapid7.com/insight/managing-platform-api-keys](https://docs.rapid7.com/insight/managing-platform-api-keys/) |
+| Account API (Swagger) | [help.rapid7.com/insightAccount/en-us/api/v1/docs.html](https://help.rapid7.com/insightAccount/en-us/api/v1/docs.html) |
+| Credential Management API (Swagger) | [help.rapid7.com/credentialmanagement/en-us/api/v1/docs.html](https://help.rapid7.com/credentialmanagement/en-us/api/v1/docs.html) |
+
+### InsightVM (`vm`)
+
+| Resource | URL |
+|----------|-----|
+| InsightVM Documentation | [docs.rapid7.com/insightvm](https://docs.rapid7.com/insightvm/) |
+| InsightVM Cloud API (Swagger) | [help.rapid7.com/insightvm/en-us/api/api.html](https://help.rapid7.com/insightvm/en-us/api/api.html) |
+| InsightVM Cloud Integrations API v4 (Swagger) | [help.rapid7.com/insightvm/en-us/api/integrations.html](https://help.rapid7.com/insightvm/en-us/api/integrations.html) |
+| InsightVM Console API v3 (Swagger) | [help.rapid7.com/insightvm/en-us/api/index.html](https://help.rapid7.com/insightvm/en-us/api/index.html) |
+| Bulk Export API (GraphQL) | [docs.rapid7.com/insightvm/bulk-export-api](https://docs.rapid7.com/insightvm/bulk-export-api/) |
+| RESTful API Overview | [docs.rapid7.com/insightvm/restful-api](https://docs.rapid7.com/insightvm/restful-api) |
+
+### InsightIDR / SIEM (`siem`)
+
+| Resource | URL |
+|----------|-----|
+| InsightIDR Documentation | [docs.rapid7.com/insightidr](https://docs.rapid7.com/insightidr/) |
+| InsightIDR REST API Overview | [docs.rapid7.com/insightidr/insightidr-rest-api](https://docs.rapid7.com/insightidr/insightidr-rest-api/) |
+| Log Search API | [docs.rapid7.com/insightidr/log-search-api](https://docs.rapid7.com/insightidr/log-search-api/) |
+
+### Surface Command / ASM (`asm`)
+
+| Resource | URL |
+|----------|-----|
+| Surface Command Documentation | [docs.rapid7.com/surface-command](https://docs.rapid7.com/surface-command/) |
+| Query Attack Surface with the API | [docs.rapid7.com/surface-command/query-attack-surface-with-api](https://docs.rapid7.com/surface-command/query-attack-surface-with-api/) |
+| ASM Type System | [docs.rapid7.com/surface-command/asm-type-system](https://docs.rapid7.com/surface-command/asm-type-system/) |
+| Connectors | [docs.rapid7.com/surface-command/connectors](https://docs.rapid7.com/surface-command/connectors) |
+
+### Digital Risk Protection / Threat Command (`drp`)
+
+| Resource | URL |
+|----------|-----|
+| Threat Command Documentation | [docs.rapid7.com/threat-command](https://docs.rapid7.com/threat-command/) |
+| Automation & Intelligence Hub | [docs.rapid7.com/threat-command/introduction-1](https://docs.rapid7.com/threat-command/introduction-1/) |
+| IOC Sources | [docs.rapid7.com/threat-command/add-iocs-to-sources](https://docs.rapid7.com/threat-command/add-iocs-to-sources/) |
+
+### InsightAppSec (`appsec`)
+
+| Resource | URL |
+|----------|-----|
+| InsightAppSec Documentation | [docs.rapid7.com/insightappsec](https://docs.rapid7.com/insightappsec/) |
+| InsightAppSec API (Swagger) | [help.rapid7.com/insightappsec/en-us/api/v1/docs.html](https://help.rapid7.com/insightappsec/en-us/api/v1/docs.html) |
+| API Getting Started | [docs.rapid7.com/insightappsec/api-get-started](https://docs.rapid7.com/insightappsec/api-get-started) |
+| API Setup & Deploy | [docs.rapid7.com/insightappsec/api-setup-deploy](https://docs.rapid7.com/insightappsec/api-setup-deploy) |
+| API Guide | [docs.rapid7.com/insightappsec/api_guide](https://docs.rapid7.com/insightappsec/api_guide/) |
+
+### InsightCloudSec / CNAPP (`cnapp`)
+
+| Resource | URL |
+|----------|-----|
+| InsightCloudSec Documentation | [docs.rapid7.com/insightcloudsec](https://docs.rapid7.com/insightcloudsec/) |
+| InsightCloudSec API Overview | [docs.rapid7.com/insightcloudsec/api-documentation](https://docs.rapid7.com/insightcloudsec/api-documentation/) |
+| InsightCloudSec API Index | [docs.rapid7.com/insightcloudsec/api](https://docs.rapid7.com/insightcloudsec/api/) |
+| InsightCloudSec API v2 | [docs.rapid7.com/insightcloudsec/api/v2](https://docs.rapid7.com/insightcloudsec/api/v2/) |
+| IaC Security Getting Started | [docs.rapid7.com/insightcloudsec/getting-started-with-iac-security](https://docs.rapid7.com/insightcloudsec/getting-started-with-iac-security/) |
+
+### InsightConnect / SOAR (`soar`)
+
+| Resource | URL |
+|----------|-----|
+| InsightConnect Documentation | [docs.rapid7.com/insightconnect](https://docs.rapid7.com/insightconnect/) |
+| InsightConnect REST API Overview | [docs.rapid7.com/insightconnect/insightconnect-rest-api](https://docs.rapid7.com/insightconnect/insightconnect-rest-api) |
+| InsightConnect API Reference | [docs.rapid7.com/insightconnect/api](https://docs.rapid7.com/insightconnect/api/) |
+
+### Platform Status (`platform status`)
+
+| Resource | URL |
+|----------|-----|
+| Rapid7 Status Page | [status.rapid7.com](https://status.rapid7.com) |
+| Statuspage API v2 (Atlassian) | [developer.statuspage.io](https://developer.statuspage.io/) |
+
+### Extension Library (`platform extensions`)
+
+| Resource | URL |
+|----------|-----|
+| Rapid7 Extension Library | [extensions.rapid7.com](https://extensions.rapid7.com) |
+| What is the Extension Library? | [docs.rapid7.com/insight/what-is-the-extension-library](https://docs.rapid7.com/insight/what-is-the-extension-library/) |
+
+### Rapid7 Bulk Export MCP Server (`vm export mcp`)
+
+| Resource | URL |
+|----------|-----|
+| rapid7-bulk-export-mcp (GitHub) | [github.com/rapid7/rapid7-bulk-export-mcp](https://github.com/rapid7/rapid7-bulk-export-mcp) |
+| Blog: Open-Source MCP Server | [rapid7.com/blog/post/em-bulk-export-ai-ready-security-workflows-open-source-mcp-server-agent-skill](https://www.rapid7.com/blog/post/em-bulk-export-ai-ready-security-workflows-open-source-mcp-server-agent-skill/) |
+
+### LLM Provider APIs (`ai`)
+
+| Provider | API Documentation |
+|----------|-------------------|
+| OpenAI | [platform.openai.com/docs/api-reference](https://platform.openai.com/docs/api-reference) |
+| Anthropic (Claude) | [docs.anthropic.com/en/api](https://docs.anthropic.com/en/api) |
+| Google Gemini | [ai.google.dev/api](https://ai.google.dev/api) |
+
 ## License
 
 See LICENSE file.
