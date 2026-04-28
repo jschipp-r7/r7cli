@@ -184,6 +184,17 @@ pip install -e ".[dev]"
 pytest
 ```
 
+### API Registry
+
+List all API endpoints used by the CLI:
+
+```bash
+r7-cli dev api list                        # list all APIs
+r7-cli dev api list --solution vm          # only VM APIs
+r7-cli dev api list --method POST          # only POST endpoints
+r7-cli dev api list --solution siem --curl # SIEM APIs with curl examples
+```
+
 ## Error Codes
 
 | Exit Code | Meaning |

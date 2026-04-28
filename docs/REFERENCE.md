@@ -702,6 +702,31 @@ r7-cli cnapp findings list -j <ORG_SERVICE_ID>
 
 ---
 
+### `r7-cli dev` — Developer Information
+
+Developer tools for introspecting the CLI's API usage.
+
+#### `r7-cli dev api list`
+
+List all API endpoints used by the CLI, with optional filtering and curl examples.
+
+| Option | Description |
+|--------|-------------|
+| `-s, --solution TEXT` | Filter by solution name (e.g. `vm`, `siem`, `drp`, `platform`) |
+| `-m, --method TEXT` | Filter by HTTP method (e.g. `GET`, `POST`, `DELETE`) |
+| `--curl, --example` | Show working curl examples for each API call |
+
+```bash
+r7-cli dev api list                        # list all APIs
+r7-cli dev api list --solution vm          # only VM APIs
+r7-cli dev api list --method POST          # only POST endpoints
+r7-cli dev api list --solution siem --curl # SIEM APIs with curl examples
+r7-cli -o table dev api list               # table format
+r7-cli -o csv dev api list                 # CSV export
+```
+
+---
+
 ## Parquet Export & Local Filtering
 
 The `vm export` commands download bulk data as Parquet files. The `vm export list` command operates entirely offline on local files — no API key needed.

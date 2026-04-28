@@ -109,7 +109,7 @@ class SolutionGroup(click.MultiCommand):
         return super().parse_args(ctx, args)
 
     def list_commands(self, ctx: click.Context) -> list[str]:
-        return sorted(VALID_SOLUTIONS | {"validate", "tldr", "ai"})
+        return sorted(VALID_SOLUTIONS | {"validate", "tldr", "ai", "dev"})
 
     def get_command(self, ctx: click.Context, name: str) -> click.Command | None:
         if name == "help":
@@ -123,6 +123,9 @@ class SolutionGroup(click.MultiCommand):
         if name == "ai":
             from r7cli.ask import ask_cmd
             return ask_cmd
+        if name == "dev":
+            from r7cli.dev import dev
+            return dev
         if name in STUB_SOLUTIONS:
             from r7cli.solutions.stub import create_stub_group
             return create_stub_group(name)
@@ -267,6 +270,12 @@ _TLDR = f"""{_BANNER}
   {_C}r7-cli -l 5 vm scans list{_R}                           {_G}# Limit to 5 results{_R}
   {_C}r7-cli --search-fields status vm scans list{_R}         {_G}# Search for field values{_R}
   {_C}r7-cli -c siem logs query -n "DNS Query"{_R}            {_G}# Use cached response{_R}
+
+{_H}Developer{_R}
+  {_C}r7-cli dev api list{_R}                                 {_G}# List all API endpoints{_R}
+  {_C}r7-cli dev api list --solution vm{_R}                   {_G}# Only VM APIs{_R}
+  {_C}r7-cli dev api list --method POST{_R}                   {_G}# Only POST endpoints{_R}
+  {_C}r7-cli dev api list --solution siem --curl{_R}          {_G}# SIEM APIs with curl examples{_R}
 
 {_H}More help{_R}
   {_C}r7-cli SOLUTION --help{_R}                              {_G}# e.g. r7-cli vm --help{_R}
