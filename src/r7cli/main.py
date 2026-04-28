@@ -99,6 +99,15 @@ def _check_license(ctx: click.Context, solution: str) -> None:
 class SolutionGroup(click.MultiCommand):
     """Dynamic multi-command that routes to per-solution Click groups."""
 
+    def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
+        # If no args at all (bare `r7-cli`), show banner + hint and exit
+        if not args:
+            click.echo(_BANNER)
+            click.echo()
+            click.echo("  Run \033[38;5;33mr7-cli --help\033[0m for full usage or \033[38;5;33mr7-cli --tldr\033[0m for quick examples.")
+            ctx.exit(0)
+        return super().parse_args(ctx, args)
+
     def list_commands(self, ctx: click.Context) -> list[str]:
         return sorted(VALID_SOLUTIONS | {"validate", "tldr", "ai"})
 

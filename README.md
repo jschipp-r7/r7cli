@@ -26,7 +26,9 @@ git clone <repo-url> r7cli && cd r7cli
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e .
 export R7_X_API_KEY="your-api-key"
-r7-cli --help
+r7-cli                # show banner and getting-started hint
+r7-cli --help         # full usage and options
+r7-cli --tldr         # quick-reference examples
 ```
 
 ## Requirements
