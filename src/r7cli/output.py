@@ -187,9 +187,8 @@ def _format_table(data: Any) -> str:
 def _format_table_short(data: Any, terminal_width: int) -> str:
     """Render *data* as a compact table with columns truncated to fit the terminal.
 
-    Distributes the available width across columns proportionally, giving
-    more space to columns with longer content. Each cell value is truncated
-    with ``…`` if it exceeds its allocated width.
+    No single column may exceed 40% of the available width. Remaining space
+    is distributed proportionally to natural content widths.
     """
     rows = _extract_rows(data)
     if not rows:
@@ -211,16 +210,29 @@ def _format_table_short(data: Any, terminal_width: int) -> str:
             col_max = max(col_max, len(val))
         max_widths.append(col_max)
 
-    # Grid table overhead: "| " + " | " between cols + " |" = 3*num_cols + 1
-    overhead = 3 * num_cols + 1
-    available = max(terminal_width - overhead, num_cols * 4)  # at least 4 chars per col
+    # Grid table overhead per column: "| " prefix (2) + " " suffix (1) = 3 per col, plus final "|"
+    # Plus tabulate may pad to maxcol internally, so subtract a small buffer
+    overhead = 3 * num_cols + 1 + 2  # +2 safety buffer for tabulate padding
+    available = max(terminal_width - overhead, num_cols * 4)
 
-    # Distribute available width proportionally to natural column widths
-    total_natural = sum(max_widths) or 1
+    # Cap: no column gets more than 30% of available width
+    max_col_width = max(int(available * 0.30), 8)
+
+    # First pass: cap natural widths
+    capped = [min(w, max_col_width) for w in max_widths]
+    total_capped = sum(capped) or 1
+
+    # Second pass: scale to fit available width
     col_widths: list[int] = []
-    for w in max_widths:
-        allocated = max(int(available * w / total_natural), 4)
-        col_widths.append(allocated)
+    for w in capped:
+        allocated = max(int(available * w / total_capped), 4)
+        col_widths.append(min(allocated, max_col_width))
+
+    # If total still exceeds available, do a final squeeze
+    total_allocated = sum(col_widths)
+    if total_allocated > available:
+        ratio = available / total_allocated
+        col_widths = [max(int(w * ratio), 4) for w in col_widths]
 
     # Truncate cell values
     truncated_rows: list[dict[str, str]] = []
