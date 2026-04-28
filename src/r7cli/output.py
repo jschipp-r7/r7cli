@@ -218,10 +218,11 @@ def _format_table(data: Any) -> str:
 
 
 def _format_table_short(data: Any, terminal_width: int) -> str:
-    """Render *data* as a compact table with columns truncated to fit the terminal.
+    """Render *data* as a compact table that fits within *terminal_width*.
 
-    No single column may exceed 25% of the terminal width. The table is
-    guaranteed to fit within *terminal_width* characters.
+    Uses an iterative render-measure-shrink approach to guarantee the
+    table never exceeds the terminal width, regardless of tabulate's
+    internal padding behavior.
     """
     rows = _extract_rows(data)
     if not rows:
@@ -234,7 +235,7 @@ def _format_table_short(data: Any, terminal_width: int) -> str:
     if num_cols == 0:
         return ""
 
-    # Calculate the max content width per column (header + all rows)
+    # Calculate the max content width per column
     max_widths: list[int] = []
     for h in headers:
         col_max = len(h)
@@ -243,52 +244,63 @@ def _format_table_short(data: Any, terminal_width: int) -> str:
             col_max = max(col_max, len(val))
         max_widths.append(col_max)
 
-    # Tabulate grid overhead: "| " + content + " " per col, plus final "|"
-    # = 3 chars per column + 1
-    overhead = 3 * num_cols + 1
-    available = max(terminal_width - overhead, num_cols * 4)
-
-    # Cap: no column gets more than 25% of terminal width
+    # Initial cap: no column wider than 25% of terminal
     max_col_width = max(int(terminal_width * 0.25), 8)
+    col_widths = [min(w, max_col_width) for w in max_widths]
 
-    # First pass: cap natural widths, use natural width if it fits
-    capped = [min(w, max_col_width) for w in max_widths]
-    total_capped = sum(capped) or 1
+    # Scale down if rough total is too large
+    overhead_est = 4 * num_cols + 1  # conservative estimate
+    available = terminal_width - overhead_est
+    total = sum(col_widths)
+    if total > available:
+        ratio = available / total
+        col_widths = [max(int(w * ratio), 4) for w in col_widths]
 
-    # Second pass: if capped total fits, use it; otherwise scale down
-    if total_capped <= available:
-        col_widths = capped
-    else:
-        ratio = available / total_capped
-        col_widths = [max(int(w * ratio), 4) for w in capped]
-
-    # Final squeeze: ensure sum(col_widths) + overhead <= terminal_width
-    while sum(col_widths) + overhead > terminal_width and max(col_widths) > 4:
-        # Shrink the widest column by 1
+    # Iterative render-and-shrink: render the table, measure, shrink widest
+    rendered = ""
+    for _ in range(60):  # safety limit
+        trunc_headers, trunc_rows = _truncate_table_data(headers, rows, col_widths)
+        rendered = tabulate(trunc_rows, headers=trunc_headers, tablefmt="grid")
+        rendered_width = max((len(line) for line in rendered.split("\n")), default=0)
+        if rendered_width <= terminal_width:
+            break
+        # Shrink the widest column
         widest = col_widths.index(max(col_widths))
+        if col_widths[widest] <= 4:
+            break  # can't shrink further
         col_widths[widest] -= 1
 
-    # Truncate cell values
-    truncated_rows: list[dict[str, str]] = []
+    return rendered
+
+
+def _truncate_table_data(
+    headers: list[str],
+    rows: list[dict],
+    col_widths: list[int],
+) -> tuple[list[str], list[list[str]]]:
+    """Truncate headers and cell values to the given column widths.
+
+    Uses ASCII ``..`` as the truncation indicator to avoid tabulate
+    miscounting the display width of Unicode ellipsis characters.
+    """
+    short_headers = []
+    for h, cw in zip(headers, col_widths):
+        if len(h) > cw:
+            short_headers.append(h[: cw - 2] + "..")
+        else:
+            short_headers.append(h)
+
+    table_rows = []
     for row in rows:
-        new_row: dict[str, str] = {}
+        table_row = []
         for h, cw in zip(headers, col_widths):
             val = str(row.get(h, ""))
             if len(val) > cw:
-                val = val[: cw - 1] + "…"
-            new_row[h] = val
-        truncated_rows.append(new_row)
+                val = val[: cw - 2] + ".."
+            table_row.append(val)
+        table_rows.append(table_row)
 
-    # Also truncate headers
-    short_headers: list[str] = []
-    for h, cw in zip(headers, col_widths):
-        if len(h) > cw:
-            h = h[: cw - 1] + "…"
-        short_headers.append(h)
-
-    # Build rows as lists matching the (possibly truncated) header order
-    table_rows = [[row[h] for h in headers] for row in truncated_rows]
-    return tabulate(table_rows, headers=short_headers, tablefmt="grid")
+    return short_headers, table_rows
 
 
 def _format_csv(data: Any) -> str:
