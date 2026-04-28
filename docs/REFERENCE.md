@@ -115,14 +115,30 @@ All API responses are cached locally in `~/.r7-cli/cache/` as SHA-256-keyed JSON
 
 ### `r7-cli validate`
 
-Validate your API key against the Insight Platform.
+Validate API key and/or DRP token against the Rapid7 platform. Returns a JSON object with the status of each credential.
+
+| Option | Description |
+|--------|-------------|
+| `--platform` | Only validate the Platform API key |
+| `--drp` | Only validate the DRP token |
 
 | Command | Method | API Endpoint |
 |---------|--------|-------------|
 | `validate` | GET | `https://{region}.api.insight.rapid7.com/validate` |
+| `validate --drp` | HEAD | `https://api.ti.insight.rapid7.com/public/v1/test-credentials` |
 
 ```bash
-r7-cli validate
+r7-cli validate                # validate all configured credentials
+r7-cli validate --platform     # only check Platform API key
+r7-cli validate --drp          # only check DRP token
+```
+
+Output format:
+```json
+{
+  "Platform": "Authorized",
+  "DRP": "Authorized"
+}
 ```
 
 ---

@@ -54,6 +54,8 @@ r7-cli --tldr         # quick-reference examples
 ```bash
 # Validate credentials
 r7-cli validate
+r7-cli validate --platform     # only check Platform API key
+r7-cli validate --drp          # only check DRP token
 
 # Natural language commands (requires LLM provider)
 r7-cli --llm openai ai show me critical vulnerabilities

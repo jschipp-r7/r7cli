@@ -189,7 +189,9 @@ _TLDR = f"""{_BANNER}
   export R7_X_API_KEY="your-key"
 
 {_H}Validate{_R}
-  {_C}r7-cli validate{_R}                                    {_G}# Validate API key{_R}
+  {_C}r7-cli validate{_R}                                    {_G}# Validate all credentials{_R}
+  {_C}r7-cli validate --platform{_R}                         {_G}# Only check Platform API key{_R}
+  {_C}r7-cli validate --drp{_R}                              {_G}# Only check DRP token{_R}
 
 {_H}InsightVM{_R}
   {_C}r7-cli vm health{_R}                                   {_G}# Print VM health info{_R}
@@ -350,9 +352,18 @@ cli.help = (
 # ---------------------------------------------------------------------------
 
 @click.command("validate")
+@click.option("--platform", "check_platform", is_flag=True, default=False, help="Only validate the Platform API key.")
+@click.option("--drp", "check_drp", is_flag=True, default=False, help="Only validate the DRP token.")
 @click.pass_context
-def _validate_cmd(ctx):
-    """Validate API key (and DRP token if provided) against the Insight Platform."""
+def _validate_cmd(ctx, check_platform, check_drp):
+    """Validate API key and/or DRP token against the Rapid7 platform.
+
+    \b
+    Examples:
+      r7-cli validate                # validate all configured credentials
+      r7-cli validate --platform     # only check the Platform API key
+      r7-cli validate --drp          # only check the DRP token
+    """
     from r7cli.client import R7Client
     from r7cli.models import INSIGHT_BASE, DRP_BASE, APIError
     from r7cli.output import format_output
@@ -360,36 +371,51 @@ def _validate_cmd(ctx):
     config = ctx.obj["config"]
     client = R7Client(config)
 
-    # --- Validate API key ---
-    if config.api_key:
-        url = INSIGHT_BASE.format(region=config.region) + "/validate"
-        try:
-            result = client.get(url, solution="platform", subcommand="validate")
-            click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
-        except R7Error as exc:
-            click.echo(str(exc), err=True)
-            sys.exit(exc.exit_code)
-    else:
-        click.echo("No API key provided — skipping platform validation.", err=True)
+    # If neither flag is set, check both
+    if not check_platform and not check_drp:
+        check_platform = True
+        check_drp = True
 
-    # --- Validate DRP token if provided ---
-    if config.drp_token:
-        token = config.drp_token
-        if ":" in token:
-            parts = token.split(":", 1)
-            auth = (parts[0], parts[1])
+    result: dict[str, str] = {}
+
+    # --- Validate Platform API key ---
+    if check_platform:
+        if config.api_key:
+            url = INSIGHT_BASE.format(region=config.region) + "/validate"
+            try:
+                client.get(url, solution="platform", subcommand="validate")
+                result["Platform"] = "Authorized"
+            except R7Error as exc:
+                result["Platform"] = f"Failed: {exc}"
         else:
-            auth = (token, "")
-        drp_url = f"{DRP_BASE}/public/v1/test-credentials"
-        try:
-            client.head(drp_url, auth=auth, solution="drp", subcommand="validate")
-            click.echo("DRP credentials valid")
-        except APIError as exc:
-            if exc.status_code == 401:
-                click.echo("DRP credentials invalid", err=True)
-                sys.exit(1)
-            click.echo(str(exc), err=True)
-            sys.exit(exc.exit_code)
+            result["Platform"] = "No API key provided"
+
+    # --- Validate DRP token ---
+    if check_drp:
+        if config.drp_token:
+            token = config.drp_token
+            if ":" in token:
+                parts = token.split(":", 1)
+                auth = (parts[0], parts[1])
+            else:
+                auth = (token, "")
+            drp_url = f"{DRP_BASE}/public/v1/test-credentials"
+            try:
+                client.head(drp_url, auth=auth, solution="drp", subcommand="validate")
+                result["DRP"] = "Authorized"
+            except APIError as exc:
+                if exc.status_code == 401:
+                    result["DRP"] = "Invalid credentials"
+                else:
+                    result["DRP"] = f"Failed: {exc}"
+        else:
+            result["DRP"] = "No DRP token provided"
+
+    click.echo(format_output(result, config.output_format, config.limit, config.search, short=config.short))
+
+    # Exit non-zero if any credential failed
+    if any("Failed" in v or "Invalid" in v for v in result.values()):
+        sys.exit(1)
 
 
 # ---------------------------------------------------------------------------
