@@ -34,6 +34,34 @@ UUID_PATTERN: re.Pattern = re.compile(
 )
 
 
+def _get_terminal_width() -> int:
+    """Get the terminal width, even when stdout is piped.
+
+    Falls back to stderr's width (usually still a TTY), then the
+    controlling terminal, then 120 as a reasonable default.
+    """
+    import os
+
+    # Try stdout first (works when not piped)
+    try:
+        width = os.get_terminal_size(1).columns  # fd 1 = stdout
+        if width > 0:
+            return width
+    except (ValueError, OSError):
+        pass
+
+    # Try stderr (usually still a TTY even when stdout is piped)
+    try:
+        width = os.get_terminal_size(2).columns  # fd 2 = stderr
+        if width > 0:
+            return width
+    except (ValueError, OSError):
+        pass
+
+    # Last resort: shutil fallback
+    return shutil.get_terminal_size((120, 24)).columns
+
+
 def _classify_field(key: str, value: Any) -> int:
     """Return priority tier for a field: 0=high, 1=medium, 2=low, 3=default.
 
@@ -90,10 +118,15 @@ def _format_short(data: Any, terminal_width: int) -> str:
 
 
 def apply_limit(data: Any, n: int) -> Any:
-    """Find the largest top-level array field and truncate it to *n* items.
+    """Truncate the row data to *n* items.
 
-    Non-dict data or dicts with no list fields are returned unchanged.
+    - If *data* is a list, truncate it directly.
+    - If *data* is a dict, find the largest top-level list field and truncate it.
+    - Other types are returned unchanged.
     """
+    if isinstance(data, list):
+        return data[:n]
+
     if not isinstance(data, dict):
         return data
 
@@ -150,14 +183,14 @@ def format_output(data: Any, fmt: str, limit: int | None = None, search: str | N
         return format_search_results(values, search)
 
     if short and fmt == "json":
-        return _format_short(data, shutil.get_terminal_size().columns)
+        return _format_short(data, _get_terminal_width())
 
     if fmt == "json":
         return json.dumps(data, indent=2)
 
     if fmt == "table":
         if short:
-            return _format_table_short(data, shutil.get_terminal_size().columns)
+            return _format_table_short(data, _get_terminal_width())
         return _format_table(data)
 
     if fmt == "csv":
@@ -187,8 +220,8 @@ def _format_table(data: Any) -> str:
 def _format_table_short(data: Any, terminal_width: int) -> str:
     """Render *data* as a compact table with columns truncated to fit the terminal.
 
-    No single column may exceed 40% of the available width. Remaining space
-    is distributed proportionally to natural content widths.
+    No single column may exceed 25% of the terminal width. The table is
+    guaranteed to fit within *terminal_width* characters.
     """
     rows = _extract_rows(data)
     if not rows:
@@ -210,29 +243,30 @@ def _format_table_short(data: Any, terminal_width: int) -> str:
             col_max = max(col_max, len(val))
         max_widths.append(col_max)
 
-    # Grid table overhead per column: "| " prefix (2) + " " suffix (1) = 3 per col, plus final "|"
-    # Plus tabulate may pad to maxcol internally, so subtract a small buffer
-    overhead = 3 * num_cols + 1 + 2  # +2 safety buffer for tabulate padding
+    # Tabulate grid overhead: "| " + content + " " per col, plus final "|"
+    # = 3 chars per column + 1
+    overhead = 3 * num_cols + 1
     available = max(terminal_width - overhead, num_cols * 4)
 
-    # Cap: no column gets more than 30% of available width
-    max_col_width = max(int(available * 0.30), 8)
+    # Cap: no column gets more than 25% of terminal width
+    max_col_width = max(int(terminal_width * 0.25), 8)
 
-    # First pass: cap natural widths
+    # First pass: cap natural widths, use natural width if it fits
     capped = [min(w, max_col_width) for w in max_widths]
     total_capped = sum(capped) or 1
 
-    # Second pass: scale to fit available width
-    col_widths: list[int] = []
-    for w in capped:
-        allocated = max(int(available * w / total_capped), 4)
-        col_widths.append(min(allocated, max_col_width))
+    # Second pass: if capped total fits, use it; otherwise scale down
+    if total_capped <= available:
+        col_widths = capped
+    else:
+        ratio = available / total_capped
+        col_widths = [max(int(w * ratio), 4) for w in capped]
 
-    # If total still exceeds available, do a final squeeze
-    total_allocated = sum(col_widths)
-    if total_allocated > available:
-        ratio = available / total_allocated
-        col_widths = [max(int(w * ratio), 4) for w in col_widths]
+    # Final squeeze: ensure sum(col_widths) + overhead <= terminal_width
+    while sum(col_widths) + overhead > terminal_width and max(col_widths) > 4:
+        # Shrink the widest column by 1
+        widest = col_widths.index(max(col_widths))
+        col_widths[widest] -= 1
 
     # Truncate cell values
     truncated_rows: list[dict[str, str]] = []

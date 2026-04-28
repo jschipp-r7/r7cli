@@ -107,8 +107,11 @@ class TestApplyLimit:
         assert result["items"] == [1, 2]
         assert result["meta"] == "ok"
 
-    def test_non_dict_unchanged(self):
-        assert apply_limit([1, 2, 3], 1) == [1, 2, 3]
+    def test_list_truncated(self):
+        assert apply_limit([1, 2, 3], 1) == [1]
+
+    def test_list_limit_larger(self):
+        assert apply_limit([1, 2], 5) == [1, 2]
 
     def test_no_lists_unchanged(self):
         data = {"a": 1, "b": "two"}
