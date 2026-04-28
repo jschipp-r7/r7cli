@@ -104,7 +104,7 @@ class SolutionGroup(click.MultiCommand):
         if not args:
             click.echo(_BANNER)
             click.echo()
-            click.echo("  Run \033[38;5;33mr7-cli help\033[0m for full usage or \033[38;5;33mr7-cli tldr\033[0m for quick examples.")
+            click.echo("  Run \033[38;5;33m'r7-cli help'\033[0m for full usage or \033[38;5;33m'r7-cli tldr'\033[0m for quick examples.")
             ctx.exit(0)
         return super().parse_args(ctx, args)
 
