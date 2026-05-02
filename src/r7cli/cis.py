@@ -39,6 +39,14 @@ _SOLUTION_PRODUCTS: dict[str, list[str]] = {
     "patching": ["Automox Add-On"],
 }
 
+# Controls that should be excluded from a solution even though the product
+# name appears in the CSV.  Keyed by solution name; values are sets of
+# Control ID prefixes.  Surface Command is listed in the Penetration Testing
+# controls (18.x) but is not a penetration-testing product.
+_SOLUTION_EXCLUDED_CONTROLS: dict[str, set[str]] = {
+    "asm": {"18."},
+}
+
 # Friendly display names
 _SOLUTION_DISPLAY: dict[str, str] = {
     "vm":      "InsightVM",
@@ -97,10 +105,24 @@ def _load_csf_rows() -> list[dict[str, str]]:
 
 
 def _matches_product(row: dict[str, str], solution: str) -> bool:
-    """Return True if *row* references any Rapid7 product for *solution*."""
+    """Return True if *row* references any Rapid7 product for *solution*.
+
+    Respects ``_SOLUTION_EXCLUDED_CONTROLS``: if the row's Control ID starts
+    with any excluded prefix for the solution, the row is skipped even when
+    the product name appears in the CSV.
+    """
     products = _SOLUTION_PRODUCTS.get(solution, [])
     if not products:
         return False
+
+    # Check exclusion list before doing the product match.
+    excluded = _SOLUTION_EXCLUDED_CONTROLS.get(solution)
+    if excluded:
+        cid = row.get("Control ID", "")
+        for prefix in excluded:
+            if cid.startswith(prefix):
+                return False
+
     impl = row.get("Rapid7 Implementation Products (Custom Script)", "")
     supp = row.get("Rapid7 Supporting Products (Custom Script)", "")
     combined = f"{impl}, {supp}"
