@@ -237,16 +237,19 @@ def query_cis_controls(
             seen.add(key)
             deduped.append(r)
 
-    # Sort by Control ID numerically
+    # Sort by Control ID — numeric parts sorted numerically, text parts alphabetically
     def _sort_key(r: dict) -> tuple:
-        parts = r["Control ID"].split(".")
-        nums = []
+        cid = r.get("Control ID", "")
+        # Split on '.' and '-' to handle both "1.2" and "GV.OC-01" formats
+        import re
+        parts = re.split(r'[.\-]', cid)
+        key: list[tuple[int, str]] = []
         for p in parts:
             try:
-                nums.append(int(p))
+                key.append((0, str(int(p)).zfill(10)))  # numeric: sort as zero-padded
             except ValueError:
-                nums.append(0)
-        return tuple(nums)
+                key.append((1, p))  # text: sort alphabetically after numbers
+        return tuple(key)
 
     deduped.sort(key=_sort_key)
     return deduped
