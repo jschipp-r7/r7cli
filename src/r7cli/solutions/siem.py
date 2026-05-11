@@ -474,7 +474,7 @@ def _poll_log_query(client: R7Client, config: Config, links: list[dict], max_pag
               help="End time as epoch ms or ISO-8601. Must be used with --from.")
 @click.option("-q", "--query", "leql_query", default=None,
               help="LEQL query to filter logs (e.g. 'where(foo=bar)'). If omitted, retrieves all entries.")
-@click.option("-p", "--max-pages", type=int, default=20, help="Max pages to retrieve per Log_ID.")
+@click.option("-p", "--max-pages", type=int, default=20, help="Max total pages to retrieve across all logs in the logset.")
 @click.pass_context
 def logs_query(ctx, logset_name, time_range, from_ts, to_ts, leql_query, max_pages):
     """Query log lines from a named logset.
@@ -581,9 +581,13 @@ def logs_query(ctx, logset_name, time_range, from_ts, to_ts, leql_query, max_pag
         click.echo(f"Logset '{logset_name}' has {len(log_ids)} log(s). Querying each…", err=True)
 
         all_events: list[str] = []
+        total_pages_fetched = 0
 
         # Step 2: For each Log_ID, initiate async query and poll
         for idx, log_id in enumerate(log_ids, 1):
+            if total_pages_fetched >= max_pages:
+                break
+
             if config.verbose:
                 click.echo(f"  [{idx}/{len(log_ids)}] Querying log {log_id}…", err=True)
 
@@ -605,9 +609,12 @@ def logs_query(ctx, logset_name, time_range, from_ts, to_ts, leql_query, max_pag
 
             # Check for links — need to poll Self or follow Next
             links = result.get("links", []) if isinstance(result, dict) else []
-            if links:
-                polled = _poll_log_query(client, config, links, max_pages)
+            remaining_pages = max_pages - total_pages_fetched
+            if links and remaining_pages > 0:
+                polled = _poll_log_query(client, config, links, remaining_pages)
                 all_events.extend(polled)
+
+            total_pages_fetched += 1
 
             if config.verbose:
                 click.echo(f"  [{idx}/{len(log_ids)}] Collected {len(all_events)} total events so far", err=True)
