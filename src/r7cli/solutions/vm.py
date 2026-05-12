@@ -103,6 +103,7 @@ def _download_parquet_urls(
     ``{prefix}.{timestamp}.parquet`` (or ``{prefix}.{timestamp}.{idx}.parquet``
     for multi-URL entries) instead of using the raw S3 filename.
     """
+    from r7cli.log import logger
     from r7cli.progress import progress_download, progress_done
 
     out = Path(output_dir)
@@ -110,6 +111,7 @@ def _download_parquet_urls(
     saved: list[Path] = []
     multi = len(urls) > 1
     total = len(urls)
+    logger.debug("Download: %d URL(s) → %s (prefix=%s, timestamp=%s)", total, out, prefix, timestamp)
     for idx, url in enumerate(urls):
         if prefix and timestamp:
             # Flatten prefix: replace / with _ to avoid subdirectories
@@ -124,12 +126,41 @@ def _download_parquet_urls(
             filename = url.rsplit("/", 1)[-1].split("?")[0] or "export.parquet"
         dest = out / filename
         progress_download(idx + 1, total, filename)
+        # Strip query params from URL for logging (contains auth tokens)
+        log_url = url.split("?")[0]
+        logger.debug("Download [%d/%d]: GET %s", idx + 1, total, log_url)
         # Use the underlying httpx client for raw download.
         # S3 pre-signed URLs may issue 307 redirects (path-style → virtual-hosted),
         # so we must follow redirects explicitly.
         resp = client._http.get(url, follow_redirects=True)
+        logger.debug(
+            "Download [%d/%d]: HTTP %d %s | Content-Length: %s | bytes received: %d",
+            idx + 1, total,
+            resp.status_code, resp.reason_phrase,
+            resp.headers.get("content-length", "unknown"),
+            len(resp.content),
+        )
+        if resp.history:
+            for redir in resp.history:
+                redir_url = str(redir.url).split("?")[0]
+                logger.debug(
+                    "Download [%d/%d]: followed redirect %d %s → %s",
+                    idx + 1, total, redir.status_code, redir.reason_phrase, redir_url,
+                )
         resp.raise_for_status()
         dest.write_bytes(resp.content)
+        file_size = dest.stat().st_size
+        logger.debug("Download [%d/%d]: wrote %d bytes → %s", idx + 1, total, file_size, dest)
+        if file_size == 0:
+            logger.warning(
+                "Download [%d/%d]: WARNING — file is 0 bytes! "
+                "Response status=%d, content-length header=%s, body length=%d. "
+                "The pre-signed URL may have expired or the server returned an empty response.",
+                idx + 1, total,
+                resp.status_code,
+                resp.headers.get("content-length", "missing"),
+                len(resp.content),
+            )
         saved.append(dest)
     progress_done(f"Downloaded {total} file(s) to {out}/")
     return saved
