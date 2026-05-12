@@ -162,7 +162,9 @@ def _download_parquet_urls(
                 len(resp.content),
             )
         saved.append(dest)
-    progress_done(f"Downloaded {total} file(s) to {out}/")
+    # Show each downloaded filename so the user knows what was written
+    for p in saved:
+        progress_done(f"Downloaded {p.name}")
     return saved
 
 
