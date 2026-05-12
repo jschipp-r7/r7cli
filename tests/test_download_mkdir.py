@@ -192,3 +192,66 @@ def test_no_prefix_no_timestamp_extracts_filename_from_url() -> None:
         assert p.name == "part-00000-abc123.snappy.parquet"
         assert p.exists()
         assert p.read_bytes() == b"PARQUET_DUMMY_BYTES"
+
+
+# ---------------------------------------------------------------------------
+# Verify follow_redirects=True is passed on every download request
+# ---------------------------------------------------------------------------
+
+
+@given(prefix=slash_prefix, timestamp=iso_timestamp, urls=dummy_urls)
+@settings(max_examples=50, deadline=None)
+def test_download_follows_redirects(
+    prefix: str, timestamp: str, urls: list[str]
+) -> None:
+    """Every HTTP GET for a parquet download must use follow_redirects=True.
+
+    S3 pre-signed URLs (path-style) can issue 307 redirects. Without
+    follow_redirects=True, the response body is empty, producing 0-byte files.
+    This was reported by a Windows customer using vm export --auto.
+    """
+    client = _make_mock_client()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _download_parquet_urls(client, urls, tmpdir, prefix=prefix, timestamp=timestamp)
+
+        # Every call to _http.get() must have follow_redirects=True
+        assert client._http.get.call_count == len(urls)
+        for call in client._http.get.call_args_list:
+            _, kwargs = call
+            assert kwargs.get("follow_redirects") is True, (
+                f"Expected follow_redirects=True in GET call, got: {kwargs}"
+            )
+
+
+def test_download_follows_redirects_no_prefix() -> None:
+    """follow_redirects=True must also be set when prefix/timestamp are omitted."""
+    client = _make_mock_client()
+    urls = [
+        "https://s3.us-west-2.amazonaws.com/bucket/part-00000.snappy.parquet?X-Amz-Token=abc",
+        "https://s3.us-west-2.amazonaws.com/bucket/part-00001.snappy.parquet?X-Amz-Token=def",
+    ]
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _download_parquet_urls(client, urls, tmpdir)
+
+        assert client._http.get.call_count == 2
+        for call in client._http.get.call_args_list:
+            _, kwargs = call
+            assert kwargs.get("follow_redirects") is True
+
+
+def test_download_calls_raise_for_status() -> None:
+    """Every download response must have raise_for_status() called.
+
+    This ensures HTTP errors (e.g. 403 expired token) are surfaced
+    rather than silently writing error XML to disk.
+    """
+    client = _make_mock_client()
+    urls = ["https://s3.example.com/file.parquet?token=abc"]
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        _download_parquet_urls(client, urls, tmpdir, prefix="test", timestamp="2026-05-07T13:50:56.086Z")
+
+    resp_mock = client._http.get.return_value
+    resp_mock.raise_for_status.assert_called()
