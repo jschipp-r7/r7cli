@@ -124,8 +124,11 @@ def _download_parquet_urls(
             filename = url.rsplit("/", 1)[-1].split("?")[0] or "export.parquet"
         dest = out / filename
         progress_download(idx + 1, total, filename)
-        # Use the underlying httpx client for raw download
-        resp = client._http.get(url)
+        # Use the underlying httpx client for raw download.
+        # S3 pre-signed URLs may issue 307 redirects (path-style → virtual-hosted),
+        # so we must follow redirects explicitly.
+        resp = client._http.get(url, follow_redirects=True)
+        resp.raise_for_status()
         dest.write_bytes(resp.content)
         saved.append(dest)
     progress_done(f"Downloaded {total} file(s) to {out}/")
